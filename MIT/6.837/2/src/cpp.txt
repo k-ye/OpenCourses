@@ -1,0 +1,10 @@
+Joint.cpp
+MatrixStack.cpp
+Mesh.cpp
+ModelerView.cpp
+SkeletalModel.cpp
+bitmap.cpp
+camera.cpp
+main.cpp
+modelerapp.cpp
+modelerui.cpp

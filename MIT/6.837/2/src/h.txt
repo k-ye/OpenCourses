@@ -1,0 +1,11 @@
+Joint.h
+MatrixStack.h
+Mesh.h
+ModelerView.h
+SkeletalModel.h
+bitmap.h
+camera.h
+extra.h
+modelerapp.h
+modelerui.h
+tuple.h
