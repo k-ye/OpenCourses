@@ -125,6 +125,7 @@ func (ck *Clerk) Get(key string) string {
 				args.ReqID = reqID
 				var reply GetReply
 				ok := call(srv, "DisKV.Get", args, &reply)
+				// fmt.Printf("%v Clerk Get, ok: %v, reply: %v\n", ck.uid, ok, reply)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey || reply.Err == ErrHasDone) {
 					return reply.Value
 				}

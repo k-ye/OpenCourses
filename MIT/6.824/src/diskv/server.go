@@ -65,26 +65,75 @@ type DisKV struct {
 	lastExecSeq int                // last executed Paxos sequence(instance) number
 	opCounter   int64              // counter of how many Ops have been started by this kvserver
 	config      shardmaster.Config // current config used by this kvserver
+	numtick int
 }
 
-func (kv *DisKV) putShardIndices() error {
-	w := new(bytes.Buffer)
-	e := gob.NewEncoder(w)
+type DisKVLocalState struct {
+	// need to store all these b/c if disk is intact, just execute from where srvr died
+	// then we don't have the chance to reconstruct from the beginning of Paxos Log
+	Shards      []int // which shards this replica group is responsible for
+	MaxReqIDs   map[string]int64
+	LastExecSeq int
+	OpCounter   int64
+	Config      shardmaster.Config
+}
+
+type RequestDisKVStateArgs struct {
+}
+
+type RequestDisKVStateReply struct {
+	Database map[string]string
+	MaxReqIDs   map[string]int64
+	LastExecSeq int
+	Config      shardmaster.Config
+}
+
+func (kv *DisKV) anyDir(a string) string {
+	d := kv.dir + a
+	// create directory if needed.
+	_, err := os.Stat(d)
+	if err != nil {
+		if err := os.Mkdir(d, 0777); err != nil {
+			log.Fatalf("Mkdir(%v): %v", d, err)
+		}
+	}
+	return d
+}
+
+func (kv *DisKV) diskIntact() bool {
+
+	d := kv.dir + "/state/"
+	_, err := os.Stat(d) //ioutil.ReadDir(d)
+	fmt.Printf("Is DisKV's disk intact? : %v\n", err)
+	return err == nil
+}
+
+func (kv *DisKV) stateDir() string {
+	return kv.anyDir("/state/")
+}
+
+func (kv *DisKV) writeKVState() error {
+	localstate := DisKVLocalState{}
+	localstate.MaxReqIDs = kv.maxReqIDs
+	localstate.LastExecSeq = kv.lastExecSeq
+	localstate.OpCounter = kv.opCounter
+	localstate.Config = kv.config
 	shards := []int{}
 	for shard, gid := range kv.config.Shards {
 		if gid == kv.gid {
 			shards = append(shards, shard)
 		}
 	}
-	DPrintf("Put shard indices: %v\n", shards)
-	//e.Encode(len(shards))
-	e.Encode(shards)
-	content:= string(w.Bytes())
+	localstate.Shards = shards
 
-	tempname := kv.dir + "temp-shards"
-	fullname := kv.dir + "full-shards"
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+	e.Encode(localstate)
 
-	if err := ioutil.WriteFile(tempname, []byte(content), 0666); err != nil {
+	tempname := kv.stateDir() + "temp-state"
+	fullname := kv.stateDir() + "kvstate"
+
+	if err := ioutil.WriteFile(tempname, w.Bytes(), 0666); err != nil {
 		return err
 	}
 	if err := os.Rename(tempname, fullname); err != nil {
@@ -93,20 +142,20 @@ func (kv *DisKV) putShardIndices() error {
 	return nil
 }
 
-func (kv *DisKV) getShardIndices() ([]int, error) {
-	fullname := kv.dir + "full-shards"
-	content, err := ioutil.ReadFile(fullname)
-	buf, result := string(content), []int{}
+// SO MANY DUPLICATE CODE!
+func (kv *DisKV) readKVState() (DisKVLocalState, error) {
+	fullname := kv.stateDir() + "kvstate"
+	buf, err := ioutil.ReadFile(fullname)
+	var result DisKVLocalState
 
 	if err != nil {
 		return result, err
 	}
-
-	r := bytes.NewBuffer([]byte(buf))
+	r := bytes.NewBuffer(buf)
 	d := gob.NewDecoder(r)
 	d.Decode(&result)
 
-	DPrintf("Get shard indices: %v\n", result)
+	DPrintf("Decoded KV Local State: %v\n", result)
 	return result, err
 }
 
@@ -119,15 +168,8 @@ func (kv *DisKV) getShardIndices() ([]int, error) {
 //
 
 func (kv *DisKV) shardDir(shard int) string {
-	d := kv.dir + "/shard-" + strconv.Itoa(shard) + "/"
-	// create directory if needed.
-	_, err := os.Stat(d)
-	if err != nil {
-		if err := os.Mkdir(d, 0777); err != nil {
-			log.Fatalf("Mkdir(%v): %v", d, err)
-		}
-	}
-	return d
+	a := "/shard-" + strconv.Itoa(shard) + "/"
+	return kv.anyDir(a)
 }
 
 // cannot use keys in file names directly, since
@@ -213,7 +255,7 @@ func WaitForPending(sleep time.Duration) time.Duration {
 
 // Generate a unique Op ID for comparing two Ops
 func (kv *DisKV) GenerateOpID() string {
-	newOpID := fmt.Sprintf("%d.%d", kv.me, kv.opCounter)
+	newOpID := fmt.Sprintf("%d.%d.%d", kv.me, kv.opCounter, nrand())
 	kv.opCounter++
 	return newOpID
 }
@@ -300,18 +342,18 @@ func (kv *DisKV) ExecutePutAppend(pxOp Op) {
 		kv.database[key] += value
 	}
 	kv.filePut(key2shard(key), key, kv.database[key])
-	DPrintf("%d KV execute %s for reqID: %s, opID: %s, key: %s, value: %s, database: %v\n", kv.me, reqID, pxOp.OpID, op, key, value, kv.database)
+	DPrintf("%d KV execute %s for reqID: %s, opID: %s, key: %s, value: %s, database: %v\n", kv.me, op, reqID, pxOp.OpID, key, value, kv.database)
 }
 
 func (kv *DisKV) ExecuteReconfig(pxOp Op) {
-	DPrintf("%d KV execute Reconfig for opID: %s, config: %v\n", kv.me, pxOp.OpID, pxOp.Config)
 	// Failed here many times due to update to a stale config under Unreliable testcase,
 	// although I don't have any clue why this happened as I checked to see if config
 	// is stale or not before I add paxos instance into the log.
 	if kv.config.Num >= pxOp.Config.Num {
+		DPrintf("%d KV execute Reconfig for opID: %s, stale config\n", kv.me, pxOp.OpID)
 		return
 	}
-
+	DPrintf("%d KV execute Reconfig for opID: %s, config: %v\n", kv.me, pxOp.OpID, pxOp.Config)
 	for key, val := range pxOp.Database {
 		kv.database[key] = val
 	}
@@ -324,9 +366,6 @@ func (kv *DisKV) ExecuteReconfig(pxOp Op) {
 	}
 
 	kv.config = pxOp.Config
-
-	kv.putShardIndices()
-	kv.getShardIndices()
 }
 
 // Execute the pxOp instance to local database, then update lastExecSeq to seq
@@ -355,6 +394,8 @@ func (kv *DisKV) ExecuteLog(pxOp Op, seq int) {
 	}
 	kv.px.Done(seq)
 	kv.lastExecSeq = seq
+
+	kv.writeKVState()
 }
 
 // Try to add a log entry (instance) to Paxos at seq slot.
@@ -371,6 +412,10 @@ func (kv *DisKV) TryAddLog(pxOp Op, seq int) Op {
 	for !done && !kv.isdead() {
 		decided, value := kv.px.Status(seq)
 		if decided == paxos.Decided {
+			// HERE'S THE PANIC
+			if (value == nil) {
+				fmt.Printf("kv: %d, Panic because value is nil\n", kv.me)
+			}
 			result = value.(Op)
 			done = true
 			break
@@ -394,10 +439,67 @@ func (kv *DisKV) AddOpToPaxos(pxOp Op) string {
 		result := kv.TryAddLog(pxOp, seq)
 		// if this seq(instance) agrees on other value, then OpID will not be the same
 		done = (result.OpID == pxOp.OpID)
-		// execute what we get from Paxos
-		kv.ExecuteLog(result, seq)
+		// err = kv.EnsureOpValid(result)
+		if true {
+			// execute what we get from Paxos
+			kv.ExecuteLog(result, seq)
+		} else {
+			DPrintf("Err when getting result Op: %v, err: %v\n", result, err)
+			kv.ExecuteLog(Op{Operation: Nop}, seq)
+		}
 	}
 	return OK
+}
+
+// Reconstruct from local state stored on disk
+func (kv *DisKV) reconstructFromLocal() bool {
+	localstate, err := kv.readKVState()
+	if err != nil {
+		return false
+	}
+	kv.maxReqIDs = localstate.MaxReqIDs
+	kv.lastExecSeq = localstate.LastExecSeq
+	kv.opCounter = localstate.OpCounter
+	kv.config = localstate.Config
+	shards := localstate.Shards
+	for _, shard := range shards {
+		shardData := kv.fileReadShard(shard)
+		for key, val := range shardData {
+			kv.database[key] = val
+		}
+	}
+	return true
+}
+
+func (kv *DisKV) RequestDisKVState(args *RequestDisKVStateArgs, reply *RequestDisKVStateReply) error {
+	reply.Database = kv.database
+	reply.MaxReqIDs = kv.maxReqIDs
+	reply.LastExecSeq = kv.lastExecSeq
+	reply.Config = kv.config
+	return nil
+}
+
+func (kv *DisKV) reconstructFromRemote()  {
+	latestConfig := kv.sm.Query(-1) // use this to get other servers in this group
+	servers := latestConfig.Groups[kv.gid]
+	
+	args := RequestDisKVStateArgs{}
+	var reply RequestDisKVStateReply
+	done, srvPt := false, 0
+	for !done {
+		kvsrv := servers[srvPt]
+		done = call(kvsrv, "DisKV.RequestDisKVState", &args, &reply)
+		if !done {
+			srvPt = (srvPt + 1) % len(servers)
+		}
+	}
+	kv.database = reply.Database
+	kv.maxReqIDs = reply.MaxReqIDs
+	kv.lastExecSeq = reply.LastExecSeq
+	kv.config = reply.Config
+	DPrintf("KV: %d restarted remotely by using %d State\n", kv.me, srvPt)
+	DPrintf("KV: %d restarted remotely State, database: %v, maxReqIDs: %v, lastExecSeq: %v, config: %v\n",
+	 kv.me, kv.database, kv.maxReqIDs, kv.lastExecSeq, kv.config)
 }
 
 // Function for CollectShardsForConfig RPC handler, the srvr being called will hand out
@@ -579,11 +681,16 @@ func (kv *DisKV) tick() {
 		cfg := kv.sm.Query(cfgNum)
 		err, opDatabase, opMaxReqIDs := kv.CollectShardsForConfig(&cfg)
 		if err == OK {
-			op := Op{Operation: Reconfig, Config: cfg, Database: opDatabase, MaxReqIDs: opMaxReqIDs, OpID: kv.GenerateOpID()}
+			op := Op{Operation:Reconfig, Config:cfg, Database:opDatabase, MaxReqIDs:opMaxReqIDs, OpID:kv.GenerateOpID()}
 			kv.AddOpToPaxos(op)
 		} else {
 			break
 		}
+	}
+	kv.numtick++
+	if kv.numtick == 5 {
+		kv.AddOpToPaxos(Op{Operation: Nop, OpID: kv.GenerateOpID()})
+		kv.numtick = 0
 	}
 }
 
@@ -642,16 +749,16 @@ func StartServer(gid int64, shardmasters []string,
 	kv.maxReqIDs = make(map[string]int64)
 	kv.opCounter = 0
 	kv.lastExecSeq = -1
+	kv.numtick = 0
+
 	if restart {
-		DPrintf("OMG it's restarting! I'm gonna fail the lab.\n")
-		shardIndices, _ := kv.getShardIndices()
-		for _, shard := range shardIndices {
-			shardData := kv.fileReadShard(shard)
-			for key, val := range shardData {
-				kv.database[key] = val
-			}
-			//DPrintf("shard data: %v\n", shardData)
+		DPrintf("DisKV: %d OMG it's restarting! I'm gonna Gua the lab.\n", me)
+		if kv.diskIntact() {
+			kv.reconstructFromLocal()
+		} else {
+			kv.reconstructFromRemote()
 		}
+		DPrintf("DisKV: %d Restarted Database: %v\n", kv.me, kv.database)
 	}
 
 	// log.SetOutput(ioutil.Discard)

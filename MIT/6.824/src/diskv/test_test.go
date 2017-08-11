@@ -103,6 +103,7 @@ func (tc *tCluster) start1(gi int, si int) {
 func (tc *tCluster) kill1(gi int, si int, deletefiles bool) {
 	g := tc.groups[gi]
 	s := g.servers[si]
+	fmt.Printf("Im goin' kill %v\n", s.port)
 	if s.p != nil {
 		s.p.Kill()
 		s.p.Wait()
@@ -670,12 +671,15 @@ func Test5DiskUse(t *testing.T) {
 	time.Sleep(time.Second)
 
 	if ck.Get(k1) != k1v {
+		fmt.Printf("kv1 get: %v, %v", ck.Get(k1), k1v)
 		t.Fatalf("wrong value for k1")
 	}
 	if ck.Get(k2) != k2v {
+		fmt.Printf("kv2 get: %v, %v", ck.Get(k2), k2v)
 		t.Fatalf("wrong value for k2")
 	}
 	if ck.Get(k3) != k3v {
+		fmt.Printf("kv3 get: %v, %v", ck.Get(k3), k3v)
 		t.Fatalf("wrong value for k3")
 	}
 
@@ -1205,6 +1209,7 @@ func Test5RejoinMix1(t *testing.T) {
 
 	v := ck.Get(k1)
 	if v != k1v {
+		fmt.Printf("value should be: %v, actual value: %v\n", k1v, v)
 		t.Fatalf("Get returned wrong value")
 	}
 

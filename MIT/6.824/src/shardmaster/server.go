@@ -59,7 +59,7 @@ func WaitForPending(sleep time.Duration) time.Duration {
 }
 
 func (sm *ShardMaster) GenerateReqID() string {
-	newReqID := fmt.Sprintf("%s.%d", sm.me, sm.reqCount)
+	newReqID := fmt.Sprintf("%d.%d", sm.me, sm.reqCount)
 	sm.reqCount ++
 	return newReqID
 }
