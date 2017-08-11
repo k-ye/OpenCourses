@@ -1,0 +1,1 @@
+Make inference on N for both the impala and waterbuck data in Raftery (1988).
