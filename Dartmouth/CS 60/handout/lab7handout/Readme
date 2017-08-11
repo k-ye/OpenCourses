@@ -1,0 +1,27 @@
+
+
+Implement the various functions in the different directories.  The
+app_{simple/stress}_{client/server}.c are provided to you to test.  
+Some functions you have already implemented in previous labs.
+
+BUILDING AND RUNNING:
+
+4 machines are used: bear, green, spruce, gile
+
+Use make to compile. 
+To run the application:
+1, start the overlay processes:
+	At each node, goto overlay directory: run ./overlay&
+	The overlay processes on 4 nodes should be started within 1 min.
+	wait until you see: waiting connection from network layer on all the nodes.
+2. start the network processes: 
+	At each node, goto network directory: run ./network&
+	wait until you see: waiting for connection from SRT process on all the nodes.
+3. start the transport processes and run the application:
+	AT one node, goto server dicrectory: run ./app_simple_app or ./app_stress_app
+	At another node, goto client directory: run ./app_simple_app or ./app_stress_app
+
+To stop the program:
+use kill -s 2 processID to kill the network processes and overlay processes
+
+If the port numbers used by the program are used already, the program exits.

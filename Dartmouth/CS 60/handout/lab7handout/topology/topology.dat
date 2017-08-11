@@ -1,0 +1,5 @@
+host3 host4 2
+host2 host4 3
+host1 host3 4
+host1 host2 5
+host1 host4 7

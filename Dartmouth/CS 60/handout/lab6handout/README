@@ -1,0 +1,22 @@
+use make to build
+
+The 4 hosts used to build overlay network is
+bear.cs.dartmouth.edu
+spruce.cs.dartmouth.edu
+gile.cs.dartmouth.edu
+green.cs.dartmouth.edu
+
+The overlay process should be running on these four hosts
+to start overlay on a host:
+goto overlay directory and run ./overlay&
+All overlay process should be started within 1 min.
+
+After all the overlay processes are started, start the network processes on all 4 nodes.
+The network process should be started after the local overlay network is initialized and 
+shows "Overlay: waiting for connection from SNP process..."
+to start network layer on a host:
+goto network directory and run ./network
+
+To kill the overlay processes and network processes: use kill -s 2 processID
+
+If the ports used by the program are used already, the program will exit.

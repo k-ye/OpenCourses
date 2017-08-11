@@ -1,0 +1,36 @@
+
+
+Use the provided Makefile to build the code.  
+There are two executables, a simple executable and a stress executable
+for you to test with.
+Just typing "make" will make both the simple and stress executables.  
+"make simple" will build just the simple
+version and "make stress" will build just the stress version.
+Use ./simple_client to run the simple client and ./simple_server
+to run the simple server.  The stress versions can be run in the same way
+with simple replaced with stress.
+
+top directory:
+send_this_text.txt - simple test data
+
+File breakdown:
+client directory:
+app_simple_client.c - simple client application
+app_stress_client.c - stress client application
+srt_client.c - srt client side source file
+srt_client.h - srt client side header file
+
+server directory:
+app_simple_server.c - simple server application
+app_stress_server.c - stress server application
+srt_server.c - srt server source file
+srt_server.h - srt server header file
+
+common directory:
+seg.c - snp function implementation, act on segments
+seg.h - snp function header
+constants.h - define some useful constants
+
+***
+Your job is to implement the functions in the various .c files (except the app
+ones) that have been left empty (i.e. they just return immediately).

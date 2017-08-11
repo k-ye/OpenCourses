@@ -1,0 +1,20 @@
+The Transmission Control Protocol (TCP) is one of the core protocols of the Internet protocol suite. TCP provides reliable, in-order delivery of a stream of bytes, making it suitable for applications like file transfer and e-mail. It is so important in the Internet protocol suite that sometimes the entire suite is referred to as "the TCP/IP protocol suite." TCP is the transport protocol that manages the individual conversations between web servers and web clients. TCP divides the HTTP messages into smaller pieces, called segments, to be sent to the destination client. It is also responsible for controlling the size and rate at which messages are exchanged between the server and the client.
+
+[edit] Reason for TCP
+
+The Internet Protocol (IP) works by exchanging groups of information called packets. Packets are short sequences of bytes consisting of a header and a body. The header describes the packet's destination, which routers on the Internet use to pass the packet along, generally in the right direction, until it arrives at its final destination. The body contains the application data.
+
+In cases of congestion, the IP can discard packets, and, for efficiency reasons, two consecutive packets on the Internet can take different routes to the destination. Then, the packets can arrive at the destination in the wrong order.
+
+The TCP software libraries use the IP and provide a simpler interface to applications by hiding most of the underlying packet structures, rearranging out-of-order packets, minimizing network congestion, and re-transmitting discarded packets. Thus, TCP very significantly simplifies the task of writing network applications.
+
+[edit] Applicability of TCP
+
+TCP is used extensively by many of the Internet's most popular application protocols and resulting applications, including the World Wide Web, E-mail, File Transfer Protocol, Secure Shell, and some streaming media applications.
+
+However, because TCP is optimized for accurate delivery rather than timely delivery, TCP sometimes incurs relatively long delays (in the order of seconds) while waiting for out-of-order messages or retransmissions of lost messages, and it is not particularly suitable for real-time applications such as Voice over IP. For such applications, protocols like the Real-time Transport Protocol (RTP) running over the User Datagram Protocol (UDP) are usually recommended instead.[1]
+
+TCP is a reliable stream delivery service that guarantees to deliver a stream of data sent from one host to another without duplication or losing data. Since packet transfer is not reliable, a technique known as positive acknowledgment with retransmission is used to guarantee reliability of packet transfers. This fundamental technique requires the receiver to respond with an acknowledgment message as it receives the data. The sender keeps a record of each packet it sends, and waits for acknowledgment before sending the next packet. The sender also keeps a timer from when the packet was sent, and retransmits a packet if the timer expires. The timer is needed in case a packet becomes lost or corrupt.[1]
+
+TCP (Transmission Control Protocol) consists of a set of rules, the protocol, that are used with the Internet Protocol, the IP, to send data in a form of message units between computers over the Internet. At the same time that the IP takes care of handling the actual delivery of the data, the TCP takes care of keeping track of the individual units of data packets that a message is divided into for efficient routing through the net. For example, when an HTML file is sent to you from a Web server, the TCP program layer of that server takes the file as a stream of bytes and divides it into packets, numbers the packets, and then forwards them individually to the IP program layer. Even though every packet has the same destination IP address, they can get routed differently through the network. When the client program in your computer gets them, the TCP stack (implementation) reassembles the individual packets and ensures they are correctly ordered as it streams them to an application.
+
