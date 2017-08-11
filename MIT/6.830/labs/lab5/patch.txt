@@ -1,0 +1,215 @@
+diff -rupN --exclude=LogFile.java --exclude=LogTest.java /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/BufferPool.java /Users/rtm/simpledb/6.830-lab5/src/simpledb/BufferPool.java
+--- /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/BufferPool.java	2009-11-14 06:39:18.000000000 -0500
++++ /Users/rtm/simpledb/6.830-lab5/src/simpledb/BufferPool.java	2009-11-14 06:39:23.000000000 -0500
+@@ -235,6 +235,15 @@ public class BufferPool {
+         if (p == null)
+             return; //not in buffer pool -- doesn't need to be flushed
+ 
++        // RECOVERY
++        TransactionId dirtier = p.isDirty();
++
++        if (dirtier == null)
++            return;
++
++        Database.getLogFile().logWrite(dirtier, p.getBeforeImage(), p);
++        Database.getLogFile().force();
++
+         DbFile file = Database.getCatalog().getDbFile(pid.getTableId());
+         file.writePage(p);
+         p.markDirty(false, null);
+@@ -411,6 +420,7 @@ public class BufferPool {
+                             //p.markDirty(true, tid);
+                             //really, pages aught to be have been flushed already before we do this!
+                             flushPage(pid);
++                            p.setBeforeImage(); // next abort should only roll back to here
+                         }
+                     } catch (IOException e) {
+                         throw new RuntimeException("failed during commit: " + e);
+diff -rupN --exclude=LogFile.java --exclude=LogTest.java /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/Database.java /Users/rtm/simpledb/6.830-lab5/src/simpledb/Database.java
+--- /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/Database.java	2009-11-14 06:39:18.000000000 -0500
++++ /Users/rtm/simpledb/6.830-lab5/src/simpledb/Database.java	2009-11-14 06:39:23.000000000 -0500
+@@ -15,9 +15,57 @@ public class Database {
+     private final Catalog _catalog;
+     private BufferPool _bufferpool; 
+ 
++    private final static String LOGFILENAME = "log";
++    private LogFile _logfile;
++
++    private final static int CP_FREQ = 500;
++
++    private void startControllerThread() {
++    	final Thread mainThread = Thread.currentThread();
++        Thread t = new Thread() {
++                public void run() {
++                    while (mainThread.isAlive()) {
++                        try {
++                            Thread.sleep(CP_FREQ);
++                        } catch (InterruptedException e) {
++                        }
++                        if (!mainThread.isAlive()) break;
++
++                        /*        try {
++                             _logfile.logCheckpoint();
++                            if (++iter % TRUNC_ITER == 0) {
++                                System.out.println("TRUNCATING.");
++                                _logfile.logTruncate();
++                                System.out.println("DONE.");
++                            }
++                        } catch (IOException e) {
++                            System.out.println("ERROR WRITING PERIODIC CHECKPOINT.");
++                            e.printStackTrace();
++                            System.exit(1);
++                            }*/
++                    }
++                }
++            };
++
++        t.start();    
++    }
++
+     private Database() {
+     	_catalog = new Catalog();
+     	_bufferpool = new BufferPool(BufferPool.DEFAULT_PAGES);
++    	try {
++            _logfile = new LogFile(new File(LOGFILENAME));
++        } catch(IOException e) {
++            _logfile = null;
++            e.printStackTrace();
++            System.exit(1);
++        }
++        // startControllerThread();
++    }
++
++    /** Return the log file of the static Database instance*/
++    public static LogFile getLogFile() {
++        return _instance._logfile;
+     }
+ 
+     /** Return the buffer pool of the static Database instance*/
+diff -rupN --exclude=LogFile.java --exclude=LogTest.java /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/HeapPage.java /Users/rtm/simpledb/6.830-lab5/src/simpledb/HeapPage.java
+--- /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/HeapPage.java	2009-11-14 06:39:18.000000000 -0500
++++ /Users/rtm/simpledb/6.830-lab5/src/simpledb/HeapPage.java	2009-11-14 06:39:23.000000000 -0500
+@@ -21,6 +21,8 @@ public class HeapPage implements Page {
+     Tuple tuples[];
+     int numSlots;
+ 
++    byte[] oldData;
++
+     /**
+      * Create a HeapPage from a set of bytes of data read from disk.
+      * The format of a HeapPage is a set of header bytes indicating
+@@ -58,6 +60,7 @@ public class HeapPage implements Page {
+         }
+         dis.close();
+ 
++        setBeforeImage();
+     }
+ 
+     /** Retrieve the number of tuples on this page.
+@@ -87,10 +90,19 @@ public class HeapPage implements Page {
+     /** Return a view of this page before it was modified
+         -- used by recovery */
+     public HeapPage getBeforeImage(){
+-        // some code goes here
+-        // only necessary for lab4
++        try {
++            return new HeapPage(pid,oldData);
++        } catch (IOException e) {
++            e.printStackTrace();
++            //should never happen -- we parsed it OK before!
++            System.exit(1);
++        }
+         return null;
+     }
++    
++    public void setBeforeImage() {
++        oldData = getPageData().clone();
++    }
+ 
+     /**
+      * @return the PageId associated with this page.
+diff -rupN --exclude=LogFile.java --exclude=LogTest.java /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/HeapPageId.java /Users/rtm/simpledb/6.830-lab5/src/simpledb/HeapPageId.java
+--- /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/HeapPageId.java	2009-11-14 06:39:18.000000000 -0500
++++ /Users/rtm/simpledb/6.830-lab5/src/simpledb/HeapPageId.java	2009-11-14 06:39:23.000000000 -0500
+@@ -63,9 +63,12 @@ public class HeapPageId implements PageI
+      *  constructors.
+      */
+     public int[] serialize() {
+-        // some code goes here
+-        // Not necessary for lab 1, 2, or 3
+-        return null;
++        int data[] = new int[2];
++
++        data[0] = tableId;
++        data[1] = pgNo;
++
++        return data;
+     }
+ 
+ }
+diff -rupN --exclude=LogFile.java --exclude=LogTest.java /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/Page.java /Users/rtm/simpledb/6.830-lab5/src/simpledb/Page.java
+--- /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/Page.java	2009-11-14 06:39:18.000000000 -0500
++++ /Users/rtm/simpledb/6.830-lab5/src/simpledb/Page.java	2009-11-14 06:39:23.000000000 -0500
+@@ -50,4 +50,10 @@ public interface Page {
+         to it.  Used by recovery.
+     */
+     public Page getBeforeImage();
++
++    /*
++     * a transaction that wrote this page just committed it.
++     * copy current content to the before image.
++     */
++    public void setBeforeImage();
+ }
+diff -rupN --exclude=LogFile.java --exclude=LogTest.java /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/Transaction.java /Users/rtm/simpledb/6.830-lab5/src/simpledb/Transaction.java
+--- /Users/rtm/tmp/simpledb/6.830-lab5/src/simpledb/Transaction.java	2009-11-14 06:39:18.000000000 -0500
++++ /Users/rtm/simpledb/6.830-lab5/src/simpledb/Transaction.java	2009-11-14 06:39:23.000000000 -0500
+@@ -9,6 +9,7 @@ import java.io.*;
+ 
+ public class Transaction {
+     TransactionId tid;
++    boolean started = false;
+ 
+     public Transaction() {
+         tid = new TransactionId();
+@@ -16,6 +17,12 @@ public class Transaction {
+ 
+     /** Start the transaction running */
+     public void start() {
++        started = true;
++        try {
++            Database.getLogFile().logXactionBegin(tid);
++        } catch (IOException e) {
++            e.printStackTrace();
++        }
+     }
+ 
+     public TransactionId getId() {
+@@ -29,7 +36,27 @@ public class Transaction {
+ 
+     /** Handle the details of transaction commit / abort */
+     public void transactionComplete(boolean abort) throws IOException {
++
++        if (started) {
++            //write commit / abort records
++            if (abort) {
++                Database.getLogFile().logAbort(tid); //does rollback too
++            } else {
++                //write all the dirty pages for this transaction out
++                Database.getBufferPool().flushPages(tid);
++                Database.getLogFile().logCommit(tid);
++            }
++
++            try {
+                 Database.getBufferPool().transactionComplete(tid, !abort); // release locks
++            } catch (IOException e) {
++                e.printStackTrace();
++            }
++
++            //setting this here means we could possibly write multiple abort records -- OK?
++            started = false;
++        }
++
+     }
+ 
+ }
