@@ -1,0 +1,24 @@
+build a key/value storage system that "shards," or partitions, the keys over a set of replica groups.
+
+A shard is a subset of the key/value pairs
+
+Each replica group handles puts and gets for just a few of the shards, operates in parallel
+
+Two main components:
+	1. a set of replica groups: A replica consists of a handful of servers that use Paxos to replicate the group's shard
+	2. shard master: Single, the shard master decides which replica group should serve each shard; this information is called the configuration
+
+Clients consult the shard master in order to find the replica group for a key
+Replica groups consult the master in order to find out what shards to serve.
+
+Main challenge: handling reconfiguration in the replica groups
+
+ensure that at most one replica group is serving requests for each shard
+
+The shardmaster manages a sequence of numbered configurations. 
+
+Each configuration describes a set of replica groups and an assignment of shards to replica groups
+
+
+
+Each RPC handler on Shard master should put a reqID inside
