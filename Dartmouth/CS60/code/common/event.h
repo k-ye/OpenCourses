@@ -4,10 +4,10 @@
 
 // wrapper struct of a condition variable and mutex
 typedef struct event {
-    pthread_mutex_t* cv_mutex;
-    pthread_cond_t cv;
-    int own_mutex;  // indicates whether |cv_mutex| is owned
-    int cond;
+  pthread_mutex_t* cv_mutex;
+  pthread_cond_t cv;
+  int own_mutex;  // indicates whether |cv_mutex| is owned
+  int cond;
 } event_t;
 
 // If |mu| is not NULL, then this event shares a mutex owned by another object.
@@ -31,7 +31,7 @@ void signal_event(event_t* e);
 // Block waiting for |e->cond| to be 1.
 //
 // precondition: |e->cv_mutex| is unlocked.
-// postcondition: |e->cv_mutex| is *locked*. Caller MUST call 
+// postcondition: |e->cv_mutex| is *locked*. Caller MUST call
 // unlock_event() later on.
 void wait_event(event_t* e);
 
@@ -41,7 +41,6 @@ void wait_event(event_t* e);
 //  -1: on timeout
 //
 // precondition: |e->cv_mutex| is unlocked.
-// postcondition: |e->cv_mutex| is *locked*. Caller MUST call 
+// postcondition: |e->cv_mutex| is *locked*. Caller MUST call
 // unlock_event() later on.
 int wait_timeout_event(event_t* e, int sec, int nano);
-
