@@ -1,3 +1,6 @@
+#ifndef EVENT_H
+#define EVENT_H
+
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,3 +47,5 @@ void wait_event(event_t* e);
 // postcondition: |e->cv_mutex| is *locked*. Caller MUST call
 // unlock_event() later on.
 int wait_timeout_event(event_t* e, int sec, int nano);
+
+#endif // EVENT_H

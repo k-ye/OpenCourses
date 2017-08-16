@@ -47,13 +47,16 @@ typedef struct segment {
 //  =======================================
 //
 
-// create a tcp connection to the server
+// this function starts the overlay by creating a direct TCP connection between
+// the client and the server. The TCP socket descriptor is returned. If the TCP
+// connection fails, return -1. The TCP socket desciptor returned will be used by
 int overlay_client_start();
 
 // create a tcp connection to the client
 int overlay_server_start();
 
-// close tcp connection from the server
+// this function stops the overlay by closing the TCP connection between the
+// server and the client
 void overlay_stop(int overlay_conn);
 
 //

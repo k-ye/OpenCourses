@@ -29,8 +29,8 @@
 // server transport control block. the server side of a SRT connection uses this
 // data structure to keep track of the connection information.
 typedef struct svr_tcb {
-  unsigned int
-      svr_nodeID;  // node ID of server, similar as IP address, currently unused
+  // node ID of server, similar as IP address, currently unused
+  unsigned int svr_nodeID;
   unsigned int svr_portNum;     // port number of server
   unsigned int client_nodeID;   // node ID of client, similar as IP address,
                                 // currently unused
@@ -45,6 +45,7 @@ typedef struct svr_tcb {
   unsigned int usedBufLen;     // size of the received data in receive buffer
   pthread_mutex_t* bufMutex;   // a pointer pointing to the mutex which is used
                                // for receive buffer access
+  event_t recvBuf_ev;
 } svr_tcb_t;
 
 //

@@ -28,6 +28,7 @@
 #include <unistd.h>
 
 #include "../common/constants.h"
+#include "../common/seg.h"
 #include "srt_client.h"
 
 // One connection is created using client port CLIENTPORT1 and server port
@@ -38,27 +39,12 @@
 // closes the connection
 #define WAITTIME 5
 
-// this function starts the overlay by creating a direct TCP connection between
-// the client and the server. The TCP socket descriptor is returned. If the TCP
-// connection fails, return -1. The TCP socket desciptor returned will be used by
-// SRT to send segments.
-int overlay_start() {
-  // Your code here.
-  return 0;
-}
-
-// this function stops the overlay by closing the TCP connection between the
-// server and the client
-void overlay_stop(int connection) {
-  // Your code here
-}
-
 int main() {
   // random seed for loss rate
   srand(time(NULL));
 
   // start overlay and get the overlay TCP socket descriptor
-  int overlay_conn = overlay_start();
+  int overlay_conn = overlay_client_start();
   if (overlay_conn < 0) {
     printf("fail to start overlay\n");
     exit(1);
@@ -89,6 +75,7 @@ int main() {
   fseek(f, 0, SEEK_END);
   int fileLen = ftell(f);
   fseek(f, 0, SEEK_SET);
+  printf("stress client, fileLen=%d\n", fileLen);
   char *buffer = (char *)malloc(fileLen);
   fread(buffer, fileLen, 1, f);
   fclose(f);

@@ -49,6 +49,7 @@ void wait_event(event_t* e) {
   while (e->cond == 0) {
     pthread_cond_wait(&(e->cv), e->cv_mutex);
   }
+  reset_event(e);
 }
 
 #define NANO_PER_SEC_ 1000000000
@@ -82,6 +83,7 @@ int wait_timeout_event(event_t* e, int sec, int nano) {
     int rc = pthread_cond_timedwait(&(e->cv), e->cv_mutex, &abs_ts);
     if (e->cond == 1) {
       result = 1;
+      reset_event(e);
     } else if (rc == ETIMEDOUT) {
       // gettimeofday(&now_tv, NULL);
       // printf("event timeout! now=%ld.%d\n", now_tv.tv_sec, now_tv.tv_usec);

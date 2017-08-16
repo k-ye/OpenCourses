@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <time.h>
 
+#include "../common/util.h"
+
 /*interfaces to application layer*/
 
 //
@@ -75,11 +77,18 @@ int srt_server_sock(unsigned int port) {
       svr_tcb_t* tcb = (svr_tcb_t*)malloc(sizeof(svr_tcb_t));
       memset(tcb, 0, sizeof(svr_tcb_t));
       pthread_mutex_init(&(tcb->mu), NULL);
-
+      // init state
       tcb->client_portNum = -1;
       tcb->svr_portNum = port;
       tcb->state = CLOSED;
       init_event_with_mu(&(tcb->ctrl_ev), &(tcb->mu));
+      // init receive buffer
+      tcb->recvBuf = (char*)malloc(RECEIVE_BUF_SIZE);
+      memset(tcb->recvBuf, 0, RECEIVE_BUF_SIZE);
+      tcb->bufMutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+      pthread_mutex_init(tcb->bufMutex, NULL);
+      init_event_with_mu(&(tcb->recvBuf_ev), tcb->bufMutex);
+      tcb->usedBufLen = 0;
 
       tcb_list[i] = tcb;
       return i;
@@ -118,6 +127,7 @@ int srt_server_accept(int sockfd) {
   if (tcb->client_portNum != -1) UNLOCK_RETURN(mu, -2);
 
   tcb->state = LISTENING;
+  tcb->expect_seqNum = 1;
   pthread_mutex_unlock(mu);
 
   event_t* ctrl_ev = &(tcb->ctrl_ev);
@@ -128,6 +138,21 @@ int srt_server_accept(int sockfd) {
   return 1;
 }
 
+// Returns the remaining number of bytes wanted by the client.
+// precondition: |tcb->bufMutex| is locked
+static unsigned copy_data_from_buf(void* buf, unsigned want_sz,
+                                   svr_tcb_t* tcb) {
+  unsigned copy_sz = umin(want_sz, tcb->usedBufLen);
+  memcpy(buf, tcb->recvBuf, copy_sz);
+  tcb->usedBufLen -= copy_sz;
+  // dst and src could overrlap, hence we use `memmove` here.
+  memset(tcb->recvBuf, 0, copy_sz);  // this is unncessary
+  memmove(tcb->recvBuf, tcb->recvBuf + copy_sz, tcb->usedBufLen);
+
+  return copy_sz;
+  // return (want_sz - copy_sz);
+}
+
 // Receive data from a srt client
 //
 // Receive data to a srt client. Recall this is a unidirectional transport
@@ -136,7 +161,33 @@ int srt_server_accept(int sockfd) {
 // implement this for Lab4. We will use this in Lab5 when we implement a
 // Go-Back-N sliding window.
 //
-int srt_server_recv(int sockfd, void* buf, unsigned int length) { return 1; }
+int srt_server_recv(int sockfd, void* buf, unsigned int length) {
+  svr_tcb_t* tcb = tcb_list[sockfd];
+  // This socket has not been allocated yet
+  if (tcb == NULL) return -1;
+
+  event_t* buf_ev = &(tcb->recvBuf_ev);
+  lock_event(buf_ev);
+  int copy_sz = copy_data_from_buf(buf, length, tcb);
+  length -= copy_sz;
+  buf += copy_sz;
+  unlock_event(buf_ev);
+
+  while (length) {
+    wait_event(buf_ev);
+    // |buf_ev->cv_mutex| is locked at this point.
+    if (tcb->state != CONNECTED) {
+      return -1;
+    }
+    // has something in the buffer
+    copy_sz = copy_data_from_buf(buf, length, tcb);
+    length -= copy_sz;
+    buf += copy_sz;
+    unlock_event(buf_ev);
+  }
+
+  return 1;
+}
 
 // Close the srt server
 //
@@ -199,8 +250,8 @@ int find_sockfd_by_request(const srt_hdr_t* request_hdr) {
   return -1;
 }
 
-static void populate_control_seg(const svr_tcb_t* tcb, unsigned short type,
-                                 seg_t* seg) {
+static void populate_seg_base(const svr_tcb_t* tcb, unsigned short type,
+                              seg_t* seg) {
   memset(seg, 0, sizeof(seg_t));
   srt_hdr_t* hdr = &(seg->header);
   hdr->src_port = tcb->svr_portNum;
@@ -210,13 +261,13 @@ static void populate_control_seg(const svr_tcb_t* tcb, unsigned short type,
 
 static void send_synack(const svr_tcb_t* tcb) {
   seg_t synack;
-  populate_control_seg(tcb, SYNACK, &synack);
+  populate_seg_base(tcb, SYNACK, &synack);
   snp_sendseg(overlay_conn, &synack);
 }
 
 static void send_finack(const svr_tcb_t* tcb) {
   seg_t finack;
-  populate_control_seg(tcb, FINACK, &finack);
+  populate_seg_base(tcb, FINACK, &finack);
   snp_sendseg(overlay_conn, &finack);
 }
 
@@ -228,9 +279,50 @@ void* closewait_func(void* tcb_arg) {
 
   svr_tcb_t* tcb = (svr_tcb_t*)tcb_arg;
   pthread_mutex_lock(&(tcb->mu));
+  // change to CLOSED
   tcb->state = CLOSED;
+  // clear buffer
+  pthread_mutex_lock(tcb->bufMutex);
+  tcb->usedBufLen = 0;
+  pthread_mutex_unlock(tcb->bufMutex);
+  
   pthread_mutex_unlock(&(tcb->mu));
+
   pthread_exit(NULL);
+}
+
+static inline int can_buffer_data(const svr_tcb_t* tcb, const srt_hdr_t* hdr) {
+  return ((tcb->expect_seqNum == hdr->seq_num) &&
+          (tcb->usedBufLen + hdr->length <= RECEIVE_BUF_SIZE));
+}
+
+// precondition:
+// - |tcb->mu| is locked
+// - |tcb->bufMutex| is unlocked
+static void handle_data_seg(svr_tcb_t* tcb, const seg_t* seg) {
+  event_t* buf_ev = &(tcb->recvBuf_ev);
+  const srt_hdr_t* hdr = &(seg->header);
+  DPRINTF("received DATA seg! src_port=%d dest_port=%d seq_num=%d data_sz=%d\n", hdr->src_port, hdr->dest_port, hdr->seq_num, hdr->length);
+  lock_event(buf_ev);
+  if (can_buffer_data(tcb, hdr)) {
+    const unsigned short data_sz = hdr->length;
+    memcpy(tcb->recvBuf + tcb->usedBufLen, seg->data, data_sz);
+    tcb->usedBufLen += data_sz;
+    tcb->expect_seqNum += data_sz;
+    DPRINTF("can buf, after buf, usedBufLen=%d!\n", tcb->usedBufLen);
+
+    signal_event(buf_ev);
+  } else {
+    DPRINTF("cannot buf :( !\n");
+  }
+
+  seg_t dataack;
+  populate_seg_base(tcb, DATAACK, &dataack);
+  dataack.header.ack_num = tcb->expect_seqNum;
+  DPRINTF("send DATAACK! src_port=%d dest_port=%d ack_num=%d\n", dataack.header.src_port, dataack.header.dest_port, dataack.header.ack_num);
+  snp_sendseg(overlay_conn, &dataack);
+
+  unlock_event(buf_ev);
 }
 
 void* seghandler(void* arg) {
@@ -243,20 +335,21 @@ void* seghandler(void* arg) {
     srt_hdr_t* hdr = &(seg.header);
     int sockfd = find_sockfd_by_request(hdr);
     if (sockfd == -1) {
-      printf("Received a segment that nobody would handle: src=%d, dst=%d.\n",
+      DPRINTF("Received a segment that nobody would handle: src=%d, dst=%d.\n",
              hdr->src_port, hdr->dest_port);
       continue;
     }
     svr_tcb_t* tcb = tcb_list[sockfd];
     event_t* ctrl_ev = &(tcb->ctrl_ev);
     lock_event(ctrl_ev);
-    printf("Received a segment for sockfd: %d, state=%d.\n", sockfd,
+    DPRINTF("Received a segment for sockfd: %d, state=%d.\n", sockfd,
            tcb->state);
     switch (tcb->state) {
       case LISTENING: {
         if (hdr->type == SYN) {
           assert(tcb->client_portNum == -1);
           tcb->client_portNum = hdr->src_port;
+          tcb->expect_seqNum = hdr->seq_num;
 
           // lock_event(ctrl_ev);
           send_synack(tcb);
@@ -276,6 +369,8 @@ void* seghandler(void* arg) {
 
           pthread_t closewait_thr;
           pthread_create(&closewait_thr, NULL, closewait_func, (void*)tcb);
+        } else if (hdr->type == DATA) {
+          handle_data_seg(tcb, &seg);
         }
         break;
       }
@@ -288,7 +383,7 @@ void* seghandler(void* arg) {
         break;
       }
       default: {
-        printf("Unkonwn server state: %d\n", tcb->state);
+        DPRINTF("Unkonwn server state: %d\n", tcb->state);
         break;
       }
     }
