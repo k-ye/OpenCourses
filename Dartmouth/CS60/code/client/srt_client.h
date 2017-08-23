@@ -30,7 +30,7 @@
 // unit to store segments in send buffer linked list.
 typedef struct segBuf {
   seg_t seg;
-  unsigned long sentTime;       // unit: nanosecond
+  unsigned long sentTime;  // unit: nanosecond
   struct segBuf *next;
 } segBuf_t;
 
@@ -49,12 +49,12 @@ typedef struct client_tcb {
   // control
   event_t ctrl_ev;
   // data
-  unsigned int next_seqNum;     // next sequence number to be used by new segment
-  pthread_mutex_t *bufMutex;    // send buffer mutex
-  segBuf_t *sendBufHead;        // head of send buffer
-  segBuf_t *sendBufUnsent;      // first unsent segment in send buffer
-  segBuf_t *sendBufTail;        // tail of send buffer
-  unsigned int unAck_segNum;    // number of sent-but-not-Acked segments
+  unsigned int next_seqNum;   // next sequence number to be used by new segment
+  pthread_mutex_t *bufMutex;  // send buffer mutex
+  segBuf_t *sendBufHead;      // head of send buffer
+  segBuf_t *sendBufUnsent;    // first unsent segment in send buffer
+  segBuf_t *sendBufTail;      // tail of send buffer
+  unsigned int unAck_segNum;  // number of sent-but-not-Acked segments
   event_t sendBuf_ev;
 } client_tcb_t;
 

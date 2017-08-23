@@ -25,4 +25,4 @@ long get_now_micros();
 
 long get_now_nanos();
 
-#endif // TIME_UTIL_H
+#endif  // TIME_UTIL_H

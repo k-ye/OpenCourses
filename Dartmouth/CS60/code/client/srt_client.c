@@ -165,7 +165,7 @@ int srt_client_connect(int sockfd, unsigned int server_port) {
     snp_sendseg(overlay_conn, &syn_seg);
     ++send_count;
     DPRINTF("client sockfd=%d, svr_port=%d, sending SYN, iter=%d\n", sockfd,
-           server_port, send_count);
+            server_port, send_count);
 
     int wait_rc = wait_timeout_event(ctrl_ev, 0, SYN_TIMEOUT);
     // |ctrl_ev->cv_mutex| is locked at this point.
@@ -200,7 +200,8 @@ inline static int is_send_buf_empty(const client_tcb_t *tcb) {
 // segments due to size limitation.
 // precondition: |tcb->bufMutex| is locked.
 static void buf_new_data_segs(client_tcb_t *tcb, void *data, unsigned length) {
-  DPRINTF("src_client=%d: buf data of size=%d, seq_num=%d\n", tcb->sockfd, length, tcb->next_seqNum);
+  DPRINTF("src_client=%d: buf data of size=%d, seq_num=%d\n", tcb->sockfd,
+          length, tcb->next_seqNum);
   while (length > 0) {
     segBuf_t *new_seg_buf = (segBuf_t *)malloc(sizeof(segBuf_t));
     memset(new_seg_buf, 0, sizeof(segBuf_t));
@@ -230,10 +231,12 @@ static void buf_new_data_segs(client_tcb_t *tcb, void *data, unsigned length) {
     if (tcb->sendBufUnsent == NULL) {
       tcb->sendBufUnsent = new_seg_buf;
     }
-    DPRINTF("  src_client=%d: new_seg_buf len=%d, seq_num=%d\n", tcb->sockfd, seg_data_sz, tcb->next_seqNum);
+    DPRINTF("  src_client=%d: new_seg_buf len=%d, seq_num=%d\n", tcb->sockfd,
+            seg_data_sz, tcb->next_seqNum);
     tcb->next_seqNum += seg_data_sz;
   }
-  DPRINTF("src_client=%d: after buf the data, seq_num=%d\n", tcb->sockfd, tcb->next_seqNum);
+  DPRINTF("src_client=%d: after buf the data, seq_num=%d\n", tcb->sockfd,
+          tcb->next_seqNum);
 }
 
 int srt_client_send(int sockfd, void *data, unsigned int length) {
@@ -282,11 +285,11 @@ static void populate_fin_seg(const client_tcb_t *tcb, seg_t *seg) {
   hdr->type = FIN;
 }
 
-static void clear_srt_send_buf(client_tcb_t *tcb) { 
+static void clear_srt_send_buf(client_tcb_t *tcb) {
   pthread_mutex_lock(tcb->bufMutex);
   // don't clear |tcb->next_seqNum|!
   while (tcb->sendBufHead) {
-    segBuf_t* holder = tcb->sendBufHead;
+    segBuf_t *holder = tcb->sendBufHead;
     tcb->sendBufHead = holder->next;
     free(holder);
   }
@@ -408,7 +411,8 @@ static void handle_dataack(client_tcb_t *tcb, srt_hdr_t *hdr) {
     assert(tcb->unAck_segNum > 0);
     --(tcb->unAck_segNum);
   }
-  DPRINTF("src_client=%d: received DATAACK! ack_num=%d, unAck_segNum=%d\n", tcb->sockfd, hdr->ack_num, tcb->unAck_segNum);
+  DPRINTF("src_client=%d: received DATAACK! ack_num=%d, unAck_segNum=%d\n",
+          tcb->sockfd, hdr->ack_num, tcb->unAck_segNum);
   if (!(tcb->sendBufHead)) {
     tcb->sendBufHead = NULL;
     tcb->sendBufTail = NULL;
@@ -430,7 +434,7 @@ void *seghandler(void *arg) {
     int sockfd = find_sockfd_by_response(hdr);
     if (sockfd == -1) {
       DPRINTF("Received a segment that nobody would handle: src=%d, dst=%d.\n",
-             hdr->src_port, hdr->dest_port);
+              hdr->src_port, hdr->dest_port);
       continue;
     }
 
@@ -501,7 +505,8 @@ static void send_from_first_unsent(client_tcb_t *tcb, unsigned long now_ns) {
 
 // precondition: |tcb->bufMutex| is locked
 static void send_from_head(client_tcb_t *tcb) {
-  DPRINTF("client_tcb=%d, sending from head, unAck_segNum=%d\n", tcb->sockfd, tcb->unAck_segNum);
+  DPRINTF("client_tcb=%d, sending from head, unAck_segNum=%d\n", tcb->sockfd,
+          tcb->unAck_segNum);
   send_buf_invariants(tcb);
   long now_ns = get_now_nanos();
   segBuf_t *cur = tcb->sendBufHead;
@@ -518,7 +523,8 @@ static void send_from_head(client_tcb_t *tcb) {
     cur = cur->next;
   }
   send_from_first_unsent(tcb, now_ns);
-  DPRINTF("client_tcb=%d, after sending from head, unAck_segNum=%d\n", tcb->sockfd, tcb->unAck_segNum);
+  DPRINTF("client_tcb=%d, after sending from head, unAck_segNum=%d\n",
+          tcb->sockfd, tcb->unAck_segNum);
 }
 
 void *sendBuf_timer(void *clienttcb) {

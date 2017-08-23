@@ -48,4 +48,4 @@ void wait_event(event_t* e);
 // unlock_event() later on.
 int wait_timeout_event(event_t* e, int sec, int nano);
 
-#endif // EVENT_H
+#endif  // EVENT_H
