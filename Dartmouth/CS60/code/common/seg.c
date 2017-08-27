@@ -144,6 +144,33 @@ int snp_sendseg(int connection, seg_t* segPtr) {
 // 1 if the segment is not lost, return 0 Even the segment is not lost, the
 // packet has PKT_LOST_RATE/2 probability to have invalid checksum
 //  We flip  a random bit in the segment to create invalid checksum
+
+int seglost(seg_t* segPtr) {
+  int random = rand() % 100;
+  if (random < PKT_LOSS_RATE * 100) {
+    printf("seg lost!!!\n");
+    return 1;
+  }
+  return 0;
+}
+
+static int maybe_flip_bit(seg_t* segPtr) {
+  int random = rand() % 100;
+  if (random < PKT_FLIP_BIT_RATE * 100) {
+    printf("error bit!!!\n");
+    // get data length
+    int len = sizeof(srt_hdr_t) + segPtr->header.length;
+    // get a random bit that will be flipped
+    int errorbit = rand() % (len * 8);
+    // flip the bit
+    char* temp = (char*)segPtr;
+    temp = temp + errorbit / 8;
+    *temp = *temp ^ (1 << (errorbit % 8));
+    return 1;
+  }
+  return 0;
+}
+
 int snp_recvseg(int connection, seg_t* segPtr) {
   char buf[sizeof(seg_t) + 2];
   char c;
@@ -195,32 +222,6 @@ int snp_recvseg(int connection, seg_t* segPtr) {
     }
   }
   return -1;
-}
-
-int seglost(seg_t* segPtr) {
-  int random = rand() % 100;
-  if (random < PKT_LOSS_RATE * 100) {
-    printf("seg lost!!!\n");
-    return 1;
-  }
-  return 0;
-}
-
-int maybe_flip_bit(seg_t* segPtr) {
-  int random = rand() % 100;
-  if (random < PKT_FLIP_BIT_RATE * 100) {
-    printf("error bit!!!\n");
-    // get data length
-    int len = sizeof(srt_hdr_t) + segPtr->header.length;
-    // get a random bit that will be flipped
-    int errorbit = rand() % (len * 8);
-    // flip the bit
-    char* temp = (char*)segPtr;
-    temp = temp + errorbit / 8;
-    *temp = *temp ^ (1 << (errorbit % 8));
-    return 1;
-  }
-  return 0;
 }
 
 static unsigned short ones_comp_add_ushort(unsigned short lhs,
