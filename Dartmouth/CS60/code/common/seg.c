@@ -11,6 +11,7 @@
 //
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <netdb.h>
 #include <netinet/ip.h>
 #include <stdio.h>
@@ -20,6 +21,7 @@
 #include <unistd.h>
 
 #include "seg.h"
+#include "util.h"
 
 int overlay_client_start() {
   int out_conn;
@@ -177,10 +179,10 @@ int snp_recvseg(int connection, seg_t* segPtr) {
         state = 0;
         idx = 0;
         if (seglost(segPtr) > 0) {
-          printf("seg lost!!!\n");
           continue;
         }
         memcpy(segPtr, buf, sizeof(seg_t));
+        maybe_flip_bit(segPtr);
         return 1;
       } else if (c == '!') {
         buf[idx] = c;
@@ -198,29 +200,48 @@ int snp_recvseg(int connection, seg_t* segPtr) {
 int seglost(seg_t* segPtr) {
   int random = rand() % 100;
   if (random < PKT_LOSS_RATE * 100) {
-    // 50% probability of losing a segment
-    if (rand() % 2 == 0) {
-      printf("seg lost!!!\n");
-      return 1;
-    }
-#if 0
-        //50% chance of invalid checksum
-        else {
-            //get data length
-            int len = sizeof(srt_hdr_t) + segPtr->header.length;
-            //get a random bit that will be flipped
-            int errorbit = rand()%(len*8);
-            //flip the bit
-            char* temp = (char*)segPtr;
-            temp = temp + errorbit/8;
-            *temp = *temp^(1<<(errorbit%8));
-            return 0;
-        }
-#endif
+    printf("seg lost!!!\n");
+    return 1;
   }
   return 0;
 }
 
+int maybe_flip_bit(seg_t* segPtr) {
+  int random = rand() % 100;
+  if (random < PKT_FLIP_BIT_RATE * 100) {
+    printf("error bit!!!\n");
+    // get data length
+    int len = sizeof(srt_hdr_t) + segPtr->header.length;
+    // get a random bit that will be flipped
+    int errorbit = rand() % (len * 8);
+    // flip the bit
+    char* temp = (char*)segPtr;
+    temp = temp + errorbit / 8;
+    *temp = *temp ^ (1 << (errorbit % 8));
+    return 1;
+  }
+  return 0;
+}
+
+static unsigned short ones_comp_add_ushort(unsigned short lhs,
+                                           const void* rhs_ptr) {
+  unsigned short rhs = *((unsigned short*)(rhs_ptr));
+  unsigned result = lhs + rhs;
+  const unsigned MASK = (1u << 16);
+  if (result >= MASK) {
+    result = (result + 1) % MASK;
+  }
+  assert(result < MASK);
+  return (unsigned short)result;
+}
+
+static inline unsigned get_seg_sz_for_checksum(const seg_t* seg) {
+  assert((sizeof(srt_hdr_t) & 1) == 0);
+  unsigned padded_data_len = seg->header.length;
+  padded_data_len += (padded_data_len & 1);
+  assert(((padded_data_len & 1) == 0) && (padded_data_len <= MAX_SEG_LEN));
+  return (sizeof(srt_hdr_t) + padded_data_len);
+}
 //
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -229,9 +250,31 @@ int seglost(seg_t* segPtr) {
 // you should first clear the checksum field in segment header to be 0
 // if the data has odd number of octets, add an 0 octets to calculate checksum
 // use 1s complement for checksum calculation
-unsigned short checksum(seg_t* segment) { return 0; }
+unsigned short checksum(seg_t* segment) {
+  segment->header.checksum = 0;
+  const unsigned seg_sz = get_seg_sz_for_checksum(segment);
+  char* base = (char*)segment;
+  unsigned short result = 0;
+  for (int i = 0; i < seg_sz; i += 2) {
+    result = ones_comp_add_ushort(result, base + i);
+  }
+  segment->header.checksum = (~result);
+  return result;
+}
 
 // check the checksum in the segment,
 // return 1 if the checksum is valid,
 // return -1 if the checksum is invalid
-int checkchecksum(seg_t* segment) { return 0; }
+int checkchecksum(const seg_t* segment) {
+  const unsigned seg_sz = get_seg_sz_for_checksum(segment);
+  char* base = (char*)segment;
+  unsigned short result = 0;
+  for (int i = 0; i < seg_sz; i += 2) {
+    result = ones_comp_add_ushort(result, base + i);
+  }
+  const unsigned short MASK = 0xffff;
+  if (result != MASK) {
+    DPRINTF("WRONG checkchecksum=0x%04x!\n", result);
+  }
+  return ((result == 0xffff) ? 1 : -1);
+}

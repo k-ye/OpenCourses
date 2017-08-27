@@ -20,7 +20,9 @@
 // MAX_SEG_LEN = 1500 - sizeof(seg header) - sizeof(ip header)
 #define MAX_SEG_LEN 1464
 // The packet loss rate is 10%
-#define PKT_LOSS_RATE 0.4
+#define PKT_LOSS_RATE 0
+// The packet checksum failure rate is 50%
+#define PKT_FLIP_BIT_RATE 0.5
 // SYN_TIMEOUT value in nano seconds
 #define SYN_TIMEOUT 100000000
 // SYN_TIMEOUT value in nano seconds

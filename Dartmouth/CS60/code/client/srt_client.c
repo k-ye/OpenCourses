@@ -214,12 +214,14 @@ static void buf_new_data_segs(client_tcb_t *tcb, void *data, unsigned length) {
     hdr->type = DATA;
     hdr->seq_num = tcb->next_seqNum;
     // copy data
-    // memset(seg->data, 0, MAX_SEG_LEN);
+    memset(seg->data, 0, MAX_SEG_LEN);  // important for |checksum|
     int seg_data_sz = imin(length, MAX_SEG_LEN);
     hdr->length = seg_data_sz;
     memcpy((void *)(seg->data), data, seg_data_sz);
     length -= seg_data_sz;
     data += seg_data_sz;
+    // this must be called at last!
+    checksum(seg);
     // append to the send buffer of |tcb|
     if (is_send_buf_empty(tcb)) {
       tcb->sendBufHead = new_seg_buf;
@@ -398,7 +400,6 @@ int find_sockfd_by_response(const srt_hdr_t *response_hdr) {
 static void handle_dataack(client_tcb_t *tcb, srt_hdr_t *hdr) {
   event_t *buf_ev = &(tcb->sendBuf_ev);
   lock_event(buf_ev);
-  assert(!is_send_buf_empty(tcb));
   if (tcb->sendBufUnsent) {
     assert(hdr->ack_num <= tcb->sendBufUnsent->seg.header.seq_num);
   }

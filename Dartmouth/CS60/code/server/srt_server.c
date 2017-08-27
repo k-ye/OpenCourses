@@ -291,8 +291,13 @@ void* closewait_func(void* tcb_arg) {
   pthread_exit(NULL);
 }
 
-static inline int can_buffer_data(const svr_tcb_t* tcb, const srt_hdr_t* hdr) {
-  return ((tcb->expect_seqNum == hdr->seq_num) &&
+static inline int can_buffer_data(const svr_tcb_t* tcb, const seg_t* seg) {
+  const srt_hdr_t* hdr = &(seg->header);
+  DPRINTF("checking if we can buffer data...\n");
+  DPRINTF("  tcb->expect_seqNum=%d, hdr->seq_num=%d ", tcb->expect_seqNum, hdr->seq_num);
+  DPRINTF("  tcb->usedBufLen=%d, hdr->length=%d\n", tcb->usedBufLen, hdr->length);
+  return ((checkchecksum(seg) == 1) && 
+          (tcb->expect_seqNum == hdr->seq_num) &&
           (tcb->usedBufLen + hdr->length <= RECEIVE_BUF_SIZE));
 }
 
@@ -304,7 +309,7 @@ static void handle_data_seg(svr_tcb_t* tcb, const seg_t* seg) {
   const srt_hdr_t* hdr = &(seg->header);
   DPRINTF("received DATA seg! src_port=%d dest_port=%d seq_num=%d data_sz=%d\n", hdr->src_port, hdr->dest_port, hdr->seq_num, hdr->length);
   lock_event(buf_ev);
-  if (can_buffer_data(tcb, hdr)) {
+  if (can_buffer_data(tcb, seg)) {
     const unsigned short data_sz = hdr->length;
     memcpy(tcb->recvBuf + tcb->usedBufLen, seg->data, data_sz);
     tcb->usedBufLen += data_sz;

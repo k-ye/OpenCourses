@@ -118,6 +118,8 @@ int snp_recvseg(int connection, seg_t* segPtr);
 
 int seglost(seg_t* segPtr);
 
+int maybe_flip_bit(seg_t* segPtr);
+
 // this function calculates checksum over the given segment
 // the checksum is calculated over the segment header and segment data
 // you should first clear the checksum field in segment header to be 0
@@ -128,6 +130,6 @@ unsigned short checksum(seg_t* segment);
 // check the checksum in the segment,
 // return 1 if the checksum is valid,
 // return -1 if the checksum is invalid
-int checkchecksum(seg_t* segment);
+int checkchecksum(const seg_t* segment);
 
 #endif
