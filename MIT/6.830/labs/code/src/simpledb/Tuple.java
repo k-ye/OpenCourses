@@ -1,11 +1,20 @@
 package simpledb;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.StringJoiner;
+
 /**
  * Tuple maintains information about the contents of a tuple.
  * Tuples have a specified schema specified by a TupleDesc object and contain
  * Field objects with the data for each field.
  */
 public class Tuple {
+    private final TupleDesc td;
+    private final List<Field> fields;
+    private RecordId rid;
+
 
     /**
      * Create a new tuple with the specified schema (type).
@@ -14,15 +23,16 @@ public class Tuple {
      * instance with at least one field.
      */
     public Tuple(TupleDesc td) {
-        // some code goes here
+        this.td = td;
+        this.fields = Arrays.asList(new Field[td.numFields()]);
+        this.rid = null;
     }
 
     /**
      * @return The TupleDesc representing the schema of this tuple.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return td;
     }
 
     /**
@@ -30,8 +40,7 @@ public class Tuple {
      *   disk. May be null.
      */
     public RecordId getRecordId() {
-        // some code goes here
-        return null;
+        return rid;
     }
 
     /**
@@ -39,7 +48,7 @@ public class Tuple {
      * @param rid the new RecordId for this tuple.
      */
     public void setRecordId(RecordId rid) {
-        // some code goes here
+        this.rid = rid;
     }
 
     /**
@@ -50,6 +59,10 @@ public class Tuple {
      */
     public void setField(int i, Field f) {
         // some code goes here
+        if (!f.getType().equals(td.getType(i))) {
+            throw new RuntimeException(String.format("Type mismatch at field %d", i));
+        }
+        fields.set(i, f);
     }
 
     /**
@@ -58,8 +71,7 @@ public class Tuple {
      * @param i field index to return. Must be a valid index.
      */
     public Field getField(int i) {
-        // some code goes here
-        return null;
+        return fields.get(i);
     }
 
     /**
@@ -72,7 +84,10 @@ public class Tuple {
      * where \t is any whitespace, except newline, and \n is a newline
      */
     public String toString() {
-        // some code goes here
-        throw new UnsupportedOperationException("Implement this");
+        StringJoiner sj = new StringJoiner("\t");
+        for (Field f : fields) {
+            sj.add(f.toString());
+        }
+        return sj.toString() + "\n";
     }
 }
