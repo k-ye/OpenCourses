@@ -153,11 +153,5 @@ public class Utility {
         }
         return out;
     }
-
-    public static int hashFunc(int seed, int n) {
-        int hashVal = (new Integer(n)).hashCode();
-        int result = (seed ^ (hashVal + 0x9e3779b9 + (seed << 6) + (seed >> 2)));
-        return result;
-    }
 }
 

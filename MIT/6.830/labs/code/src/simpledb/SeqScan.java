@@ -7,12 +7,7 @@ import java.util.*;
  * disk).
  */
 public class SeqScan implements DbIterator {
-    private TransactionId txId;
-    private int tableid;
-    private String tableAlias;
-    private DbFile dbFile;
-    private DbFileIterator fileIter;
-    private TupleDesc td;
+
     /**
      * Creates a sequential scan over the specified table as a part of the
      * specified transaction.
@@ -26,27 +21,12 @@ public class SeqScan implements DbIterator {
      *         name can be null.fieldName, tableAlias.null, or null.null).
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
-        this.txId = tid;
-        this.tableid = tableid;
-        this.tableAlias = tableAlias;
-
-        dbFile = Database.getCatalog().getDbFile(tableid);
-        fileIter = dbFile.iterator(txId);
-        // init td
-        TupleDesc rawTd = dbFile.getTupleDesc();
-        Type[] typeAr = new Type[rawTd.numFields()];
-        String[] fieldAr = new String[rawTd.numFields()];
-        for (int i = 0; i < rawTd.numFields(); ++i) {
-            typeAr[i] = rawTd.getType(i);
-            fieldAr[i] = tableAlias + rawTd.getFieldName(i);
-        }
-        td = new TupleDesc(typeAr, fieldAr);
+        // some code goes here
     }
 
-    @Override
     public void open()
         throws DbException, TransactionAbortedException {
-        fileIter.open();
+        // some code goes here
     }
 
     /**
@@ -55,30 +35,28 @@ public class SeqScan implements DbIterator {
      * @return the TupleDesc with field names from the underlying HeapFile,
      * prefixed with the tableAlias string from the constructor.
      */
-    @Override
     public TupleDesc getTupleDesc() {
-        return td;
+        // some code goes here
+        return null;
     }
 
-    @Override
     public boolean hasNext() throws TransactionAbortedException, DbException {
-        return fileIter.hasNext();
+        // some code goes here
+        return false;
     }
 
-    @Override
     public Tuple next()
         throws NoSuchElementException, TransactionAbortedException, DbException {
-        return fileIter.next();
+        // some code goes here
+        return null;
     }
 
-    @Override
     public void close() {
-        fileIter.close();
+        // some code goes here
     }
 
-    @Override
     public void rewind()
         throws DbException, NoSuchElementException, TransactionAbortedException {
-        fileIter.rewind();
+        // some code goes here
     }
 }

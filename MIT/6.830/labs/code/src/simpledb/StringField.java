@@ -21,12 +21,12 @@ public class StringField implements Field {
 
      */
     public StringField(String s, int maxSize) {
-        this.maxSize = maxSize;
+    this.maxSize = maxSize;
 
-        if (s.length() > maxSize)
-            value = s.substring(0,maxSize);
-        else
-            value = s;
+    if (s.length() > maxSize)
+        value = s.substring(0,maxSize);
+    else
+        value = s;
     }
 
     public String toString() {
@@ -47,16 +47,16 @@ public class StringField implements Field {
     @param dos Where the string is written
     */
     public void serialize(DataOutputStream dos) throws IOException {
-        String s = value;
-        int overflow = maxSize - s.length();
-        if (overflow < 0) {
-            String news = s.substring(0,maxSize);
-            s  = news;
-        }
-        dos.writeInt(s.length());
-        dos.writeBytes(s);
-        while (overflow-- > 0)
-            dos.write((byte)0);
+    String s = value;
+    int overflow = maxSize - s.length();
+    if (overflow < 0) {
+        String news = s.substring(0,maxSize);
+        s  = news;
+    }
+    dos.writeInt(s.length());
+    dos.writeBytes(s);
+    while (overflow-- > 0)
+        dos.write((byte)0);
     }
 
     /**

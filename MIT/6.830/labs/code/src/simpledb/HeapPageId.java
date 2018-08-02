@@ -2,23 +2,22 @@ package simpledb;
 
 /** Unique identifier for HeapPage objects. */
 public class HeapPageId implements PageId {
-    private int tableid;
-    private int pageNo;
+
     /**
      * Constructor. Create a page id structure for a specific page of a
      * specific table.
      *
-     * @param tableid The table that is being referenced
-     * @param pageNo The page number in that table.
+     * @param tableId The table that is being referenced
+     * @param pgNo The page number in that table.
      */
-    public HeapPageId(int tableid, int pageNo) {
-        this.tableid = tableid;
-        this.pageNo = pageNo;
+    public HeapPageId(int tableId, int pgNo) {
+        // some code goes here
     }
 
     /** @return the table associated with this PageId */
     public int getTableId() {
-        return tableid;
+        // some code goes here
+        return 0;
     }
 
     /**
@@ -26,12 +25,8 @@ public class HeapPageId implements PageId {
      *   this PageId
      */
     public int pageno() {
-        return pageNo;
-    }
-
-    @Override
-    public String toString() {
-        return "(<HeapPageId> tableid: " + tableid + " pageno: " + pageNo + ")";
+        // some code goes here
+        return 0;
     }
 
     /**
@@ -40,12 +35,9 @@ public class HeapPageId implements PageId {
      *   key in a hash table in the BufferPool, for example.)
      * @see BufferPool
      */
-    @Override
     public int hashCode() {
-        int hash = Utility.hashFunc(0, tableid);
-        hash = Utility.hashFunc(hash, pageNo);
-        hash = Utility.hashFunc(hash, ((tableid << 16) | pageNo));
-        return hash;
+        // some code goes here
+        throw new UnsupportedOperationException("implement this");
     }
 
     /**
@@ -55,13 +47,9 @@ public class HeapPageId implements PageId {
      * @return true if the objects are equal (e.g., page numbers and table
      *   ids are the same)
      */
-    @Override
     public boolean equals(Object o) {
-        if (!(o instanceof HeapPageId) || o == null) {
-            return false;
-        }
-        HeapPageId other = (HeapPageId)o;
-        return (tableid == other.tableid && pageNo == other.pageNo);
+        // some code goes here
+        return false;
     }
 
     /**

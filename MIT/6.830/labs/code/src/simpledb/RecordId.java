@@ -5,30 +5,29 @@ package simpledb;
  * specific table.
  */
 public class RecordId {
-    private PageId pageId;
-    private int tupleNo;
 
     /** Creates a new RecordId refering to the specified PageId and tuple number.
      * @param pid the pageid of the page on which the tuple resides
      * @param tupleno the tuple number within the page.
      */
     public RecordId(PageId pid, int tupleno) {
-        this.pageId = pid;
-        this.tupleNo = tupleno;
+        // some code goes here
     }
 
     /**
      * @return the tuple number this RecordId references.
      */
     public int tupleno() {
-        return tupleNo;
+        // some code goes here
+        return 0;
     }
 
     /**
      * @return the page id this RecordId references.
      */
     public PageId getPageId() {
-        return pageId;
+        // some code goes here
+        return null;
     }
     
     /**
@@ -37,11 +36,8 @@ public class RecordId {
      */
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof RecordId) || o == null) {
-            return false;
-        }
-        RecordId other = (RecordId)o;
-        return (pageId.equals(other.pageId)&& tupleNo == other.tupleNo);
+    	// some code goes here
+    	throw new UnsupportedOperationException("implement this");
     }
     
     /**
@@ -51,8 +47,9 @@ public class RecordId {
      */
     @Override
     public int hashCode() {
-        int hash = Utility.hashFunc(0, pageId.hashCode());
-        hash = Utility.hashFunc(hash, tupleNo);
-        return hash;
+    	// some code goes here
+    	throw new UnsupportedOperationException("implement this");
+    	
     }
+    
 }

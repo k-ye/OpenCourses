@@ -15,33 +15,13 @@ import java.util.*;
  */
 
 public class Catalog {
-    private static class TableRecord {
-        private final DbFile file;
-        private final String name;
-        private final String pkey;
-
-        public TableRecord(DbFile file, String name, String pkey) {
-            this.file = file;
-            this.name = name;
-            this.pkey = pkey;
-        }
-
-        public DbFile getFile() { return file; }
-
-        public String getName() { return name; }
-
-        public String getPkey() { return pkey; }
-    }
-    private final HashMap<Integer, TableRecord> idToTableMap;
-    private final HashMap<String, Integer> tableNameToIdMap;
 
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
-        idToTableMap = new HashMap<Integer, TableRecord>();
-        tableNameToIdMap = new HashMap<String, Integer>();
+        // some code goes here
     }
 
     /**
@@ -50,15 +30,11 @@ public class Catalog {
      * @param file the contents of the table to add;  file.getId() is the identfier of
      *    this file/tupledesc param for the calls getTupleDesc and getFile
      * @param name the name of the table -- may be an empty string.  May not be null.  If a name
-     * conflict exists, use the last table to be added as the table for a given name.
      * @param pkeyField the name of the primary key field
+     * conflict exists, use the last table to be added as the table for a given name.
      */
     public void addTable(DbFile file, String name, String pkeyField) {
-        assert file != null && name != null;
-        Integer tid = file.getId();
-        TableRecord record = new TableRecord(file, name, pkeyField);
-        idToTableMap.put(tid, record);
-        tableNameToIdMap.put(name, tid);
+        // some code goes here
     }
 
     public void addTable(DbFile file, String name) {
@@ -81,22 +57,9 @@ public class Catalog {
      * Return the id of the table with a specified name,
      * @throws NoSuchElementException if the table doesn't exist
      */
-    public int getTableId(String name) throws NoSuchElementException {
-        if (!tableNameToIdMap.containsKey(name)) {
-            throw new NoSuchElementException("Table name: " + name + " does not exist");
-        }
-        return tableNameToIdMap.get(name);
-    }
-
-    private void validateTableId(int tid) throws NoSuchElementException {
-        if (!idToTableMap.containsKey(tid)) {
-            throw new NoSuchElementException("Invalid table index: " + tid);
-        }
-    }
-
-    private TableRecord getTableRecord(int tid) throws NoSuchElementException {
-        validateTableId(tid);
-        return idToTableMap.get(tid);
+    public int getTableId(String name) {
+        // some code goes here
+        return 0;
     }
 
     /**
@@ -105,7 +68,8 @@ public class Catalog {
      *     function passed to addTable
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
-        return getDbFile(tableid).getTupleDesc();
+        // some code goes here
+        return null;
     }
 
     /**
@@ -115,25 +79,28 @@ public class Catalog {
      *     function passed to addTable
      */
     public DbFile getDbFile(int tableid) throws NoSuchElementException {
-        return getTableRecord(tableid).getFile();
+        // some code goes here
+        return null;
     }
 
     /** Delete all tables from the catalog */
     public void clear() {
-        idToTableMap.clear();
-        tableNameToIdMap.clear();
+        // some code goes here
     }
 
     public String getPrimaryKey(int tableid) {
-        return getTableRecord(tableid).getPkey();
+        // some code goes here
+        return null;
     }
 
     public Iterator<Integer> tableIdIterator() {
-        return idToTableMap.keySet().iterator();
+        // some code goes here
+        return null;
     }
 
-    public String getTableName(int tableid) {
-        return getTableRecord(tableid).getName();
+    public String getTableName(int id) {
+        // some code goes here
+        return null;
     }
     
     /**

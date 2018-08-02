@@ -27,8 +27,7 @@ public enum Type {
     }, STRING_TYPE() {
         @Override
         public int getLen() {
-            // The additional 4 bytes is used to store the actual length of the string.
-            return STRING_LEN + 4;
+            return STRING_LEN+4;
         }
 
         @Override

@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import junit.framework.JUnit4TestAdapter;
 
 import org.junit.Test;
-import org.junit.Ignore;
 
 import simpledb.systemtest.SimpleDbTestBase;
 
