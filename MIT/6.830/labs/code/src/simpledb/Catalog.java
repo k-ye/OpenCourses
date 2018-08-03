@@ -15,26 +15,53 @@ import java.util.*;
  */
 
 public class Catalog {
+    private static class DbRecord {
+        private final DbFile file;
+        private final String tableName;
+        private final String pkeyField;
 
+        public DbRecord(DbFile file, String tableName, String pKeyField) {
+            this.file = file;
+            this.tableName = tableName;
+            this.pkeyField = pKeyField;
+        }
+
+        public DbFile getFile() { return file; }
+
+        public String getTableName() { return tableName; }
+
+        public String getPkeyField() { return pkeyField; }
+    }
+
+    private final Map<String, Integer> dbNameToIds;
+    private final Map<Integer, DbRecord> idToDbRecords;
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
-        // some code goes here
+        this.dbNameToIds = new HashMap<>();
+        this.idToDbRecords = new HashMap<>();
     }
 
     /**
      * Add a new table to the catalog.
      * This table's contents are stored in the specified DbFile.
-     * @param file the contents of the table to add;  file.getId() is the identfier of
+     * @param file the contents of the table to add;  file.getId() is the identifier of
      *    this file/tupledesc param for the calls getTupleDesc and getFile
      * @param name the name of the table -- may be an empty string.  May not be null.  If a name
-     * @param pkeyField the name of the primary key field
      * conflict exists, use the last table to be added as the table for a given name.
+     * @param pkeyField the name of the primary key field
      */
     public void addTable(DbFile file, String name, String pkeyField) {
-        // some code goes here
+        DbRecord dbRecord = new DbRecord(file, name, pkeyField);
+        Integer oldId = dbNameToIds.get(name);
+        if (oldId != null) {
+            dbNameToIds.remove(name);
+            idToDbRecords.remove(oldId);
+        }
+        dbNameToIds.put(name, file.getId());
+        idToDbRecords.put(file.getId(), dbRecord);
     }
 
     public void addTable(DbFile file, String name) {
@@ -57,9 +84,12 @@ public class Catalog {
      * Return the id of the table with a specified name,
      * @throws NoSuchElementException if the table doesn't exist
      */
-    public int getTableId(String name) {
-        // some code goes here
-        return 0;
+    public int getTableId(String name) throws NoSuchElementException {
+        Integer result = dbNameToIds.get(name);
+        if (result == null) {
+            throw new NoSuchElementException("Cannot find table " + name);
+        }
+        return result;
     }
 
     /**
@@ -68,8 +98,7 @@ public class Catalog {
      *     function passed to addTable
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
-        // some code goes here
-        return null;
+        return getDbFile(tableid).getTupleDesc();
     }
 
     /**
@@ -79,28 +108,29 @@ public class Catalog {
      *     function passed to addTable
      */
     public DbFile getDbFile(int tableid) throws NoSuchElementException {
-        // some code goes here
-        return null;
+        return getDbRecord(tableid).getFile();
     }
 
     /** Delete all tables from the catalog */
     public void clear() {
-        // some code goes here
+        dbNameToIds.clear();
+        idToDbRecords.clear();
     }
 
     public String getPrimaryKey(int tableid) {
-        // some code goes here
-        return null;
+        return getDbRecord(tableid).getPkeyField();
     }
 
     public Iterator<Integer> tableIdIterator() {
-        // some code goes here
-        return null;
+        return idToDbRecords.keySet().iterator();
     }
 
-    public String getTableName(int id) {
-        // some code goes here
-        return null;
+    public String getTableName(int tableid) {
+        return getDbRecord(tableid).getTableName();
+    }
+
+    private DbRecord getDbRecord(int tableid) {
+        return idToDbRecords.get(tableid);
     }
     
     /**
