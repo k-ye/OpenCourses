@@ -224,10 +224,6 @@ public class HeapPage implements Page {
         return new byte[len]; //all 0
     }
 
-    public static HeapPage createEmptyPage(HeapPageId id) throws IOException {
-        return new HeapPage(id, createEmptyPageData());
-    }
-
     /**
      * Delete the specified tuple from the page;  the tuple should be updated to reflect
      *   that it is no longer stored on any page.

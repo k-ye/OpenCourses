@@ -17,9 +17,11 @@ public class BufferPool {
     /** Bytes per page, including header. */
     public static final int PAGE_SIZE = 4096;
 
-    /** Default number of pages passed to the constructor. This is used by
-    other classes. BufferPool should use the numPages argument to the
-    constructor instead. */
+    /**
+     * Default number of pages passed to the constructor. This is used by
+     * other classes. BufferPool should use the numPages argument to the
+     * constructor instead.
+     */
     public static final int DEFAULT_PAGES = 50;
 
     private final int numPages;
@@ -57,12 +59,8 @@ public class BufferPool {
             if (idToPages.size() >= numPages) {
                 throw new DbException("Cannot add more pages, buffer pool is full");
             }
-            try {
-                page = HeapPage.createEmptyPage((HeapPageId) pid);
-                idToPages.put(pid, page);
-            } catch(IOException e) {
-                throw new DbException(e.getMessage());
-            }
+            page = Database.getCatalog().getDbFile(pid.getTableId()).readPage(pid);
+            idToPages.put(pid, page);
         }
         return page;
     }
