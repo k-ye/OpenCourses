@@ -1,6 +1,9 @@
 package simpledb;
 
 import java.io.*;
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * BufferPool manages the reading and writing of pages into memory from
  * disk. Access methods call into it to retrieve pages, and it fetches
@@ -19,13 +22,16 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private final int numPages;
+    private final Map<PageId, Page> idToPages;
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        // some code goes here
+        this.numPages = numPages;
+        this.idToPages = new HashMap<>();
     }
 
     /**
@@ -43,10 +49,22 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        // TODO(k-ye): Not completed yet
+        Page page = idToPages.get(pid);
+        if (page == null) {
+            if (idToPages.size() >= numPages) {
+                throw new DbException("Cannot add more pages, buffer pool is full");
+            }
+            try {
+                page = HeapPage.createEmptyPage((HeapPageId) pid);
+                idToPages.put(pid, page);
+            } catch(IOException e) {
+                throw new DbException(e.getMessage());
+            }
+        }
+        return page;
     }
 
     /**
