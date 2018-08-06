@@ -66,14 +66,15 @@ public class HeapFile implements DbFile {
             throw new IllegalArgumentException("Invalid page ID.");
         }
 
-        try (FileInputStream fis = new FileInputStream(file)) {
-            final int pageNo = pid.pageno();
+        try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
             final int pageSz = BufferPool.PAGE_SIZE;
+            final int pageNo = pid.pageno();
             byte[] data = HeapPage.createEmptyPageData();
-            fis.read(data, pageNo * pageSz, pageSz);
+            raf.seek(pageNo * pageSz);
+            raf.read(data, 0, pageSz);
             return new HeapPage((HeapPageId) pid, data);
         } catch (Exception e) {
-            throw new RuntimeException(e.getMessage());
+            throw new RuntimeException(e);
         }
     }
 

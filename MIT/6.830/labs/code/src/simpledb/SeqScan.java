@@ -7,6 +7,12 @@ import java.util.*;
  * disk).
  */
 public class SeqScan implements DbIterator {
+    private final TransactionId txId;
+    private final int tableId;
+    private final String tableAlias;
+
+    private final DbFile dbFile;
+    private DbFileIterator underlyingIter;
 
     /**
      * Creates a sequential scan over the specified table as a part of the
@@ -21,12 +27,17 @@ public class SeqScan implements DbIterator {
      *         name can be null.fieldName, tableAlias.null, or null.null).
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
-        // some code goes here
+        this.txId = tid;
+        this.tableId = tableid;
+        this.tableAlias = tableAlias;
+
+        this.dbFile = Database.getCatalog().getDbFile(tableid);
+        this.underlyingIter = null;
     }
 
     public void open()
         throws DbException, TransactionAbortedException {
-        // some code goes here
+        rewind();
     }
 
     /**
@@ -36,27 +47,39 @@ public class SeqScan implements DbIterator {
      * prefixed with the tableAlias string from the constructor.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        TupleDesc td = Database.getCatalog().getTupleDesc(tableId);
+        Type[] typeAr = new Type[td.numFields()];
+        String[] fieldAr = new String[td.numFields()];
+        for (int i = 0; i < td.numFields(); ++i) {
+            typeAr[i] = td.getType(i);
+            fieldAr[i] = tableAlias + "-" + td.getFieldName(i);
+        }
+        return new TupleDesc(typeAr, fieldAr);
     }
 
     public boolean hasNext() throws TransactionAbortedException, DbException {
-        // some code goes here
-        return false;
+        if (underlyingIter == null) {
+            return false;
+        }
+        return underlyingIter.hasNext();
     }
 
     public Tuple next()
         throws NoSuchElementException, TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        if (!hasNext()) {
+            throw new NoSuchElementException("End of SeqScan.");
+        }
+        // No need for fix here.
+        return underlyingIter.next();
     }
 
     public void close() {
-        // some code goes here
+        this.underlyingIter = null;
     }
 
     public void rewind()
         throws DbException, NoSuchElementException, TransactionAbortedException {
-        // some code goes here
+        this.underlyingIter = dbFile.iterator(txId);
+        this.underlyingIter.open();
     }
 }
