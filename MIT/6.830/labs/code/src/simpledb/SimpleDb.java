@@ -74,6 +74,39 @@ public class SimpleDb {
                 System.out.println("Class Parser not found -- perhaps you are trying to run the parser as a part of lab1?");
             }
 
+        } else if (args[0].equals("selectint")) {
+            // construct a 3-column table schema
+            String fileName = args[1];
+            int numColumns = Integer.parseInt(args[2]);
+            Type types[] = new Type[numColumns];
+            String names[] = new String[numColumns];
+            for (int c = 0; c < numColumns; ++c) {
+                types[c] = Type.INT_TYPE;
+                names[c] = String.format("field%d", c);
+            }
+            TupleDesc descriptor = new TupleDesc(types, names);
+
+            // create the table, associate it with some_data_file.dat
+            // and tell the catalog about the schema of this table.
+            HeapFile table1 = new HeapFile(new File(fileName), descriptor);
+            Database.getCatalog().addTable(table1, "test");
+
+            // construct the query: we use a simple SeqScan, which spoonfeeds
+            // tuples via its iterator.
+            TransactionId tid = new TransactionId();
+            SeqScan f = new SeqScan(tid, table1.getId(), "test");
+            try {
+                // and run it
+                f.open();
+                while (f.hasNext()) {
+                    Tuple tup = f.next();
+                    System.out.println(tup);
+                }
+                f.close();
+                Database.getBufferPool().transactionComplete(tid);
+            } catch (Exception e) {
+                System.out.println ("Exception : " + e);
+            }
         }
         else {
             System.err.println("Unknown command: " + args[0]);
