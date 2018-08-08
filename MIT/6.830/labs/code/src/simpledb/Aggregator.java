@@ -5,9 +5,9 @@ package simpledb;
  * list of Tuples.
  */
 public interface Aggregator {
-    static final int NO_GROUPING = -1;
+    int NO_GROUPING = -1;
 
-    public enum Op {
+    enum Op {
         MIN, MAX, SUM, AVG, COUNT;
 
         /**
@@ -38,11 +38,11 @@ public interface Aggregator {
      *
      * @param tup the Tuple containing an aggregate field and a group-by field
      */
-    public void merge(Tuple tup);
+    void merge(Tuple tup);
 
     /**
      * Create a DbIterator over group aggregate results.
      * @see simpledb.TupleIterator for a possible helper
      */
-    public DbIterator iterator();
+    DbIterator iterator();
 }
