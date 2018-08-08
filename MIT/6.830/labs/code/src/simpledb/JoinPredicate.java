@@ -16,8 +16,14 @@ public class JoinPredicate {
      *   Predicate.Op.GREATER_THAN_OR_EQ, or Predicate.Op.LESS_THAN_OR_EQ
      * @see Predicate
      */
+    private final int field1Idx;
+    private final int field2Idx;
+    private final Predicate.Op op;
+
     public JoinPredicate(int field1, Predicate.Op op, int field2) {
-        // some code goes here
+        this.field1Idx = field1;
+        this.field2Idx = field2;
+        this.op = op;
     }
 
     /**
@@ -26,7 +32,6 @@ public class JoinPredicate {
      * @return true if the tuples satisfy the predicate.
      */
     public boolean filter(Tuple t1, Tuple t2) {
-        // some code goes here
-        return false;
+        return t1.getField(field1Idx).compare(op, t2.getField(field2Idx));
     }
 }
