@@ -57,8 +57,8 @@ public class BufferPool {
         // TODO(k-ye): Not completed yet
         Page page = idToPages.get(pid);
         if (page == null) {
-            if (idToPages.size() >= numPages) {
-                throw new DbException("Cannot add more pages, buffer pool is full");
+            while (idToPages.size() >= numPages) {
+                evictPage();
             }
             page = Database.getCatalog().getDbFile(pid.getTableId()).readPage(pid);
             idToPages.put(pid, page);
@@ -161,9 +161,9 @@ public class BufferPool {
      *     break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        // some code goes here
-        // not necessary for lab1
-
+        for (PageId pageId : idToPages.keySet()) {
+            flushPage(pageId);
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -180,9 +180,15 @@ public class BufferPool {
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+    private synchronized void flushPage(PageId pid) throws IOException {
+        Page page = idToPages.get(pid);
+        if (page == null) {
+            return;
+        }
+        if (page.isDirty() != null) {
+            Database.getCatalog().getDbFile(pid.getTableId()).writePage(page);
+            page.markDirty(false, null);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -197,8 +203,17 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized  void evictPage() throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        if (idToPages.isEmpty()) {
+            return;
+        }
+        try {
+            // The eviction policy could be worse...
+            PageId pageId = idToPages.keySet().iterator().next();
+            flushPage(pageId);
+            idToPages.remove(pageId);
+        } catch (IOException e) {
+            throw new DbException(e.getMessage());
+        }
     }
 
 }
