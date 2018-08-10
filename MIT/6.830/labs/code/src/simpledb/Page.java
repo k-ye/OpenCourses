@@ -56,4 +56,22 @@ public interface Page {
      * copy current content to the before image.
      */
     public void setBeforeImage();
+
+    /**
+     * Adds the specified tuple to the page;  the tuple should be updated to reflect
+     *  that it is now stored on this page.
+     * @throws DbException if the page is full (no empty slots) or tupledesc
+     *         is mismatch.
+     * @param t The tuple to add.
+     */
+    public void addTuple(Tuple t) throws DbException;
+
+    /**
+     * Delete the specified tuple from the page;  the tuple should be updated to reflect
+     *   that it is no longer stored on any page.
+     * @throws DbException if this tuple is not on this page, or tuple slot is
+     *         already empty.
+     * @param t The tuple to delete
+     */
+    public void deleteTuple(Tuple t) throws DbException;
 }

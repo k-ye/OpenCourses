@@ -12,13 +12,14 @@ import java.io.*;
  */
 public class HeapPage implements Page {
 
-    HeapPageId pid;
-    TupleDesc td;
-    byte header[];
-    Tuple tuples[];
-    int numSlots;
+    private final HeapPageId pid;
+    private final TupleDesc td;
+    private final byte header[];
+    private Tuple tuples[];
+    private final int numSlots;
 
-    byte[] oldData;
+    private byte[] oldData;
+    private TransactionId lastDirtiedTxn;
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -59,6 +60,7 @@ public class HeapPage implements Page {
         dis.close();
 
         setBeforeImage();
+        lastDirtiedTxn = null;
     }
 
     /** Retrieve the number of tuples on this page.
@@ -224,28 +226,36 @@ public class HeapPage implements Page {
         return new byte[len]; //all 0
     }
 
-    /**
-     * Delete the specified tuple from the page;  the tuple should be updated to reflect
-     *   that it is no longer stored on any page.
-     * @throws DbException if this tuple is not on this page, or tuple slot is
-     *         already empty.
-     * @param t The tuple to delete
-     */
-    public void deleteTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+    @Override
+    public void addTuple(Tuple t) throws DbException {
+        if ((getNumEmptySlots() == 0) || !t.getTupleDesc().equals(td)) {
+            throw new DbException("Cannot add tuple.");
+        }
+        for (int i = 0; i < getNumTuples(); ++i) {
+            if (!getSlot(i)) {
+                RecordId rid = new RecordId(getId(), i);
+                t.setRecordId(rid);
+                tuples[i] = t;
+                setSlot(i, true);
+                return;
+            }
+        }
+        // Should never reach here.
+        assert(false);
     }
 
-    /**
-     * Adds the specified tuple to the page;  the tuple should be updated to reflect
-     *  that it is now stored on this page.
-     * @throws DbException if the page is full (no empty slots) or tupledesc
-     *         is mismatch.
-     * @param t The tuple to add.
-     */
-    public void addTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+    @Override
+    public void deleteTuple(Tuple t) throws DbException {
+        if (!t.getTupleDesc().equals(td)) {
+            throw new DbException("Cannot delete tuple.");
+        }
+        RecordId rid = t.getRecordId();
+        if ((rid == null) || !rid.getPageId().equals(getId()) || !getSlot(rid.tupleno())) {
+            throw new DbException("Cannot delete tuple.");
+        }
+        setSlot(rid.tupleno(), false);
+        // Detach {@code t} from any page.
+        t.setRecordId(null);
     }
 
     /**
@@ -254,8 +264,7 @@ public class HeapPage implements Page {
      */
     @Override
     public void markDirty(boolean dirty, TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1
+        lastDirtiedTxn = (dirty ? tid : null);
     }
 
     /**
@@ -263,9 +272,7 @@ public class HeapPage implements Page {
      */
     @Override
     public TransactionId isDirty() {
-        // some code goes here
-        // not necessary for lab1
-        return null;
+        return lastDirtiedTxn;
     }
 
     /**
@@ -281,6 +288,29 @@ public class HeapPage implements Page {
         return numEmpty;
     }
 
+    private static class HeaderIndex {
+        private final int arrIdx;
+        private final int bitIdx;
+        public HeaderIndex(int arrIdx, int bitIdx) {
+            this.arrIdx = arrIdx;
+            this.bitIdx = bitIdx;
+        }
+
+        public int headerArrIndex() {
+            return arrIdx;
+        }
+
+        public int bitIndexInHeader() {
+            return bitIdx;
+        }
+    }
+
+    private HeaderIndex computeHeaderIndex(int tupleNo) {
+        int arrIdx = (tupleNo / 8);
+        int bitIdx = (tupleNo % 8);
+        return new HeaderIndex(arrIdx, bitIdx);
+    }
+
     /**
      * Returns true if associated slot on this page is filled.
      */
@@ -288,17 +318,24 @@ public class HeapPage implements Page {
         if (i >= numSlots) {
             return false;
         }
-        int hdrIdx = (i / 8);
-        int bitIdxInHdr = (i % 8);
-        return (((header[hdrIdx] >> bitIdxInHdr) & 1) == 1);
+        HeaderIndex idx = computeHeaderIndex(i);
+        return (((header[idx.headerArrIndex()] >> idx.bitIndexInHeader()) & 1) == 1);
     }
 
     /**
      * Abstraction to fill or clear a slot on this page.
      */
     private void setSlot(int i, boolean value) {
-        // some code goes here
-        // not necessary for lab1
+        if (i >= numSlots) {
+            return;
+        }
+        HeaderIndex idx = computeHeaderIndex(i);
+        int mask = (1 << idx.bitIndexInHeader());
+        if (value) {
+            header[idx.headerArrIndex()] |= mask;
+        } else {
+            header[idx.headerArrIndex()] &= (~mask);
+        }
     }
 
     /**
