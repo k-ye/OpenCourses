@@ -5,7 +5,9 @@ package simpledb;
  * removes them from the table they belong to.
  */
 public class Delete extends AbstractDbIterator {
-
+    private final TransactionId txId;
+    private DbIterator child;
+    private final TupleDesc td;
     /**
      * Constructor specifying the transaction that this delete belongs to as
      * well as the child to read from.
@@ -13,24 +15,31 @@ public class Delete extends AbstractDbIterator {
      * @param child The child operator from which to read tuples for deletion
      */
     public Delete(TransactionId t, DbIterator child) {
-        // some code goes here
+        this.txId = t;
+        this.child = child;
+        this.td = new TupleDesc(new Type[]{Type.INT_TYPE}, new String[]{"deleted"});
     }
 
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return td;
     }
 
     public void open() throws DbException, TransactionAbortedException {
-        // some code goes here
+        if (child != null) {
+            child.open();
+        }
     }
 
     public void close() {
-        // some code goes here
+        if (child != null) {
+            child.close();
+        }
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        if (child != null) {
+            child.rewind();
+        }
     }
 
     /**
@@ -42,7 +51,18 @@ public class Delete extends AbstractDbIterator {
      * @see BufferPool#deleteTuple
      */
     protected Tuple readNext() throws TransactionAbortedException, DbException {
-        // some code goes here
+        if (child != null) {
+            int count = 0;
+            while (child.hasNext()) {
+                Tuple t = child.next();
+                Database.getBufferPool().deleteTuple(txId, t);
+                count += 1;
+            }
+            child = null;
+            Tuple result = new Tuple(new TupleDesc(new Type[]{Type.INT_TYPE}));
+            result.setField(0, new IntField(count));
+            return result;
+        }
         return null;
     }
 }
