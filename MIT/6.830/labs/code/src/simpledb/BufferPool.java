@@ -2,6 +2,7 @@ package simpledb;
 
 import java.io.*;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -74,7 +75,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void releasePage(TransactionId tid, PageId pid) {
+    public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
     }
@@ -84,13 +85,13 @@ public class BufferPool {
      *
      * @param tid the ID of the transaction requesting the unlock
      */
-    public  void transactionComplete(TransactionId tid) throws IOException {
+    public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
-    public   boolean holdsLock(TransactionId tid, PageId p) {
+    public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
         return false;
@@ -103,7 +104,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param commit a flag indicating whether we should commit or abort
      */
-    public   void transactionComplete(TransactionId tid, boolean commit)
+    public void transactionComplete(TransactionId tid, boolean commit)
         throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
@@ -123,10 +124,14 @@ public class BufferPool {
      * @param tableId the table to add the tuple to
      * @param t the tuple to add
      */
-    public  void insertTuple(TransactionId tid, int tableId, Tuple t)
+    public void insertTuple(TransactionId tid, int tableId, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        // TODO(k-ye): Needs to implement locking for transaction.
+        DbFile file = Database.getCatalog().getDbFile(tableId);
+        List<Page> pages = file.addTuple(tid, t);
+        for (Page page : pages) {
+            page.markDirty(true, tid);
+        }
     }
 
     /**
@@ -144,8 +149,10 @@ public class BufferPool {
      */
     public  void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        // TODO(k-ye): Needs to implement locking for transaction.
+        DbFile file = Database.getCatalog().getDbFile(t.getRecordId().getPageId().getTableId());
+        Page page = file.deleteTuple(tid, t);
+        page.markDirty(true, tid);
     }
 
     /**
