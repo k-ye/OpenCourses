@@ -1,4 +1,5 @@
 package simpledb;
+import java.io.IOException;
 import java.util.*;
 
 /**
@@ -6,6 +7,10 @@ import java.util.*;
  * the tableid specified in the constructor
  */
 public class Insert extends AbstractDbIterator {
+    private final TransactionId txId;
+    private DbIterator child;
+    private final int tableId;
+    private final TupleDesc td;
 
     /**
      * Constructor.
@@ -16,24 +21,32 @@ public class Insert extends AbstractDbIterator {
      */
     public Insert(TransactionId t, DbIterator child, int tableid)
         throws DbException {
-        // some code goes here
+        this.txId = t;
+        this.child = child;
+        this.tableId = tableid;
+        this.td = new TupleDesc(new Type[]{Type.INT_TYPE}, new String[]{"inserted"});
     }
 
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return td;
     }
 
     public void open() throws DbException, TransactionAbortedException {
-        // some code goes here
+        if (child != null) {
+            child.open();
+        }
     }
 
     public void close() {
-        // some code goes here
+        if (child != null) {
+            child.close();
+        }
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        if (child != null) {
+            child.rewind();
+        }
     }
 
     /**
@@ -51,7 +64,22 @@ public class Insert extends AbstractDbIterator {
      */
     protected Tuple readNext()
             throws TransactionAbortedException, DbException {
-        // some code goes here
+        if (child != null) {
+            try {
+                int count = 0;
+                while (child.hasNext()) {
+                    Tuple t = child.next();
+                    Database.getBufferPool().insertTuple(txId, tableId, t);
+                    count += 1;
+                }
+                child = null;
+                Tuple result = new Tuple(new TupleDesc(new Type[]{Type.INT_TYPE}));
+                result.setField(0, new IntField(count));
+                return result;
+            } catch (IOException e) {
+                throw new DbException(e.getMessage());
+            }
+        }
         return null;
     }
 }
