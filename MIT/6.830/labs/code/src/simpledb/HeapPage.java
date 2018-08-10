@@ -226,7 +226,13 @@ public class HeapPage implements Page {
         return new byte[len]; //all 0
     }
 
-    @Override
+    /**
+     * Adds the specified tuple to the page;  the tuple should be updated to reflect
+     *  that it is now stored on this page.
+     * @throws DbException if the page is full (no empty slots) or tupledesc
+     *         is mismatch.
+     * @param t The tuple to add.
+     */
     public void addTuple(Tuple t) throws DbException {
         if ((getNumEmptySlots() == 0) || !t.getTupleDesc().equals(td)) {
             throw new DbException("Cannot add tuple.");
@@ -244,7 +250,13 @@ public class HeapPage implements Page {
         assert(false);
     }
 
-    @Override
+    /**
+     * Delete the specified tuple from the page;  the tuple should be updated to reflect
+     *   that it is no longer stored on any page.
+     * @throws DbException if this tuple is not on this page, or tuple slot is
+     *         already empty.
+     * @param t The tuple to delete
+     */
     public void deleteTuple(Tuple t) throws DbException {
         if (!t.getTupleDesc().equals(td)) {
             throw new DbException("Cannot delete tuple.");
