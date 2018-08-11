@@ -148,7 +148,7 @@ public class HeapFile implements DbFile {
 
         private Iterator<Tuple> getCurPageIter() throws TransactionAbortedException, DbException {
             HeapPageId pageId = new HeapPageId(getId(), curPageNo);
-            HeapPage page = (HeapPage) Database.getBufferPool().getPage(txId, pageId, /*perm=*/null);
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(txId, pageId, Permissions.READ_ONLY);
             return page.iterator();
         }
 
