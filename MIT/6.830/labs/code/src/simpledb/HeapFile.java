@@ -79,7 +79,6 @@ public class HeapFile implements DbFile {
 
     @Override
     public void writePage(Page page) throws IOException {
-        // some code goes here
         if ((page.getId().getTableId() != getId())) {
             throw new IllegalArgumentException("Cannot write page.");
         }
@@ -104,20 +103,28 @@ public class HeapFile implements DbFile {
     @Override
     public ArrayList<Page> addTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
+        // The entire method is lock guarded because it could insert new page.
+        BufferPool bufferPool = Database.getBufferPool();
         ArrayList<Page> result = new ArrayList<>();
         for (int i = 0; i < numPages(); ++i) {
-            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
+            HeapPage page = (HeapPage) bufferPool.getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
             if (page.getNumEmptySlots() > 0) {
                 page.addTuple(t);
                 result.add(page);
                 break;
+            } else {
+                bufferPool.releasePage(tid, page.getId());
             }
         }
         if (result.isEmpty()) {
-            HeapPage page = new HeapPage(new HeapPageId(tableId, numPages()), HeapPage.createEmptyPageData());
+            // First we write a new page to physical device.
+            HeapPageId pageId = new HeapPageId(getId(), numPages());
+            writePage(new HeapPage(pageId, HeapPage.createEmptyPageData()));
+            // Then retrieve it via buffer pool to set up locking properly.
+            HeapPage page = (HeapPage) bufferPool.getPage(tid, pageId, Permissions.READ_WRITE);
+            assert(page.getNumEmptySlots() > 0);
             page.addTuple(t);
             result.add(page);
-            writePage(page);
         }
         return result;
     }

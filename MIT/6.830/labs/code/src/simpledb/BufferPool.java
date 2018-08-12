@@ -27,6 +27,7 @@ public class BufferPool {
 
     private final int numPages;
     private final Map<PageId, Page> idToPages;
+    private final LockManager lockManager;
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -35,6 +36,7 @@ public class BufferPool {
     public BufferPool(int numPages) {
         this.numPages = numPages;
         this.idToPages = new HashMap<>();
+        this.lockManager = new LockManager();
     }
 
     /**
@@ -55,13 +57,25 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // TODO(k-ye): Not completed yet
-        Page page = idToPages.get(pid);
-        if (page == null) {
-            while (idToPages.size() >= numPages) {
-                evictPage();
+        Page page;
+        synchronized (this) {
+            page = idToPages.get(pid);
+            if (page == null) {
+                while (idToPages.size() >= numPages) {
+                    evictPage();
+                }
+                page = Database.getCatalog().getDbFile(pid.getTableId()).readPage(pid);
+                idToPages.put(pid, page);
             }
-            page = Database.getCatalog().getDbFile(pid.getTableId()).readPage(pid);
-            idToPages.put(pid, page);
+        }
+        try {
+            if (perm.equals(Permissions.READ_ONLY)) {
+                lockManager.acquireReaderLock(tid, pid);
+            } else {
+                lockManager.acquireWriterLock(tid, pid);
+            }
+        } catch (InterruptedException e) {
+            throw new TransactionAbortedException();
         }
         return page;
     }
@@ -78,6 +92,7 @@ public class BufferPool {
     public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
+        lockManager.release(tid, pid);
     }
 
     /**
@@ -92,9 +107,7 @@ public class BufferPool {
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2
-        return false;
+        return lockManager.holdsLock(tid, p);
     }
 
     /**
