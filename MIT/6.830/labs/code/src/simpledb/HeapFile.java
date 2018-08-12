@@ -106,25 +106,27 @@ public class HeapFile implements DbFile {
         // The entire method is lock guarded because it could insert new page.
         BufferPool bufferPool = Database.getBufferPool();
         ArrayList<Page> result = new ArrayList<>();
-        for (int i = 0; i < numPages(); ++i) {
-            HeapPage page = (HeapPage) bufferPool.getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
-            if (page.getNumEmptySlots() > 0) {
+        synchronized (this) {
+            for (int i = 0; i < numPages(); ++i) {
+                HeapPage page = (HeapPage) bufferPool.getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
+                if (page.getNumEmptySlots() > 0) {
+                    page.addTuple(t);
+                    result.add(page);
+                    break;
+                } else {
+                    bufferPool.releasePage(tid, page.getId());
+                }
+            }
+            if (result.isEmpty()) {
+                // First we write a new page to physical device.
+                HeapPageId pageId = new HeapPageId(getId(), numPages());
+                writePage(new HeapPage(pageId, HeapPage.createEmptyPageData()));
+                // Then retrieve it via buffer pool to set up locking properly.
+                HeapPage page = (HeapPage) bufferPool.getPage(tid, pageId, Permissions.READ_WRITE);
+                assert (page.getNumEmptySlots() > 0);
                 page.addTuple(t);
                 result.add(page);
-                break;
-            } else {
-                bufferPool.releasePage(tid, page.getId());
             }
-        }
-        if (result.isEmpty()) {
-            // First we write a new page to physical device.
-            HeapPageId pageId = new HeapPageId(getId(), numPages());
-            writePage(new HeapPage(pageId, HeapPage.createEmptyPageData()));
-            // Then retrieve it via buffer pool to set up locking properly.
-            HeapPage page = (HeapPage) bufferPool.getPage(tid, pageId, Permissions.READ_WRITE);
-            assert(page.getNumEmptySlots() > 0);
-            page.addTuple(t);
-            result.add(page);
         }
         return result;
     }
@@ -139,22 +141,34 @@ public class HeapFile implements DbFile {
 
     @Override
     public DbFileIterator iterator(TransactionId txId) {
-        return new HeapFileIter(txId);
+        return new HeapFileIter(txId, getId(), numPages());
     }
 
-    private class HeapFileIter implements DbFileIterator {
+    private static class HeapFileIter implements DbFileIterator {
         private final TransactionId txId;
+        private final int tableId;
+        // Note that we cannot use numPages() of the parent, as it could grow when this iterator
+        // is still used. Possible scenario:
+        //
+        // 1. Creates an iterator, I1, from this heap file,
+        // 2. A transaction inserts each element in I1 into the same heap file. Since we could
+        //  create new empty pages on the physical device. This will grow the actual number of
+        //  pages.
+        private final int numPagesSnapshot;
+
         private boolean closed;
         private int curPageNo;
         private Iterator<Tuple> curPageIter;
 
-        public HeapFileIter(TransactionId txId) {
+        public HeapFileIter(TransactionId txId, int tableId, int numPagesSnapshot) {
             this.txId = txId;
+            this.tableId = tableId;
+            this.numPagesSnapshot = numPagesSnapshot;
             this.closed = true;
         }
 
         private Iterator<Tuple> getCurPageIter() throws TransactionAbortedException, DbException {
-            HeapPageId pageId = new HeapPageId(getId(), curPageNo);
+            HeapPageId pageId = new HeapPageId(tableId, curPageNo);
             HeapPage page = (HeapPage) Database.getBufferPool().getPage(txId, pageId, Permissions.READ_ONLY);
             return page.iterator();
         }
@@ -165,7 +179,7 @@ public class HeapFile implements DbFile {
             }
             curPageNo += 1;
             curPageIter = null;
-            while (curPageNo < numPages()) {
+            while (curPageNo < numPagesSnapshot) {
                 Iterator<Tuple> pageIter = getCurPageIter();
                 if (pageIter.hasNext()) {
                     curPageIter = pageIter;
@@ -184,7 +198,7 @@ public class HeapFile implements DbFile {
         @Override
         public boolean hasNext()
                 throws DbException, TransactionAbortedException {
-            if (closed || (curPageNo >= numPages()) || (curPageIter == null)) {
+            if (closed || (curPageNo >= numPagesSnapshot) || (curPageIter == null)) {
                 return false;
             }
             // If {@code curPageIter} is not null, then it must has a next value.
