@@ -100,35 +100,41 @@ public class HeapFile implements DbFile {
         return (int)(file.length() / BufferPool.PAGE_SIZE);
     }
 
+    private ArrayList<Page> addTuple(TransactionId tid, Tuple t, int startPageNo)
+            throws DbException, IOException, TransactionAbortedException {
+        BufferPool bufferPool = Database.getBufferPool();
+        ArrayList<Page> result = new ArrayList<>();
+
+        int numPagesSnapshot = numPages();
+        for (int i = startPageNo; i < numPagesSnapshot; ++i) {
+            HeapPage page = (HeapPage) bufferPool.getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
+            if (page.getNumEmptySlots() > 0) {
+                page.addTuple(t);
+                result.add(page);
+                break;
+            } else {
+                bufferPool.releasePage(tid, page.getId());
+            }
+        }
+        if (result.isEmpty()) {
+            synchronized (this) {
+                if (numPagesSnapshot == numPages()) {
+                    // First we write a new page to physical device.
+                    HeapPageId pageId = new HeapPageId(getId(), numPages());
+                    writePage(new HeapPage(pageId, HeapPage.createEmptyPageData()));
+                }
+                // Otherwise someone else has inserted a new page for us.
+            }
+            // Then retrieve it via buffer pool. This sets up
+            // lock manager for the page properly.
+            return addTuple(tid, t, numPagesSnapshot);
+        }
+        return result;
+    }
     @Override
     public ArrayList<Page> addTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // The entire method is lock guarded because it could insert new page.
-        BufferPool bufferPool = Database.getBufferPool();
-        ArrayList<Page> result = new ArrayList<>();
-        synchronized (this) {
-            for (int i = 0; i < numPages(); ++i) {
-                HeapPage page = (HeapPage) bufferPool.getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
-                if (page.getNumEmptySlots() > 0) {
-                    page.addTuple(t);
-                    result.add(page);
-                    break;
-                } else {
-                    bufferPool.releasePage(tid, page.getId());
-                }
-            }
-            if (result.isEmpty()) {
-                // First we write a new page to physical device.
-                HeapPageId pageId = new HeapPageId(getId(), numPages());
-                writePage(new HeapPage(pageId, HeapPage.createEmptyPageData()));
-                // Then retrieve it via buffer pool to set up locking properly.
-                HeapPage page = (HeapPage) bufferPool.getPage(tid, pageId, Permissions.READ_WRITE);
-                assert (page.getNumEmptySlots() > 0);
-                page.addTuple(t);
-                result.add(page);
-            }
-        }
-        return result;
+        return addTuple(tid, t, 0);
     }
 
     @Override
