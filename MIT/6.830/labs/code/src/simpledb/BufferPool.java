@@ -90,8 +90,6 @@ public class BufferPool {
      * @param pid the ID of the page to unlock
      */
     public void releasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
         lockManager.release(tid, pid);
     }
 
@@ -101,8 +99,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+        transactionComplete(tid, true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -220,10 +217,16 @@ public class BufferPool {
             return;
         }
         try {
-            // The eviction policy could be worse...
-            PageId pageId = idToPages.keySet().iterator().next();
-            flushPage(pageId);
-            idToPages.remove(pageId);
+            for (PageId pageId : idToPages.keySet()) {
+                Page page = idToPages.get(pageId);
+                if (page.isDirty() == null) {
+                    // We can only evict a non-dirty page.
+                    flushPage(pageId);
+                    idToPages.remove(pageId);
+                    return;
+                }
+            }
+            throw new DbException("Cannot evict a page: all pages are dirty.");
         } catch (IOException e) {
             throw new DbException(e.getMessage());
         }
