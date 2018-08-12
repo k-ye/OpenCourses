@@ -131,6 +131,7 @@ public class HeapFile implements DbFile {
         }
         return result;
     }
+
     @Override
     public ArrayList<Page> addTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {

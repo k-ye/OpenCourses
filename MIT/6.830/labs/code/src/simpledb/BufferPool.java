@@ -1,9 +1,7 @@
 package simpledb;
 
 import java.io.*;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -27,7 +25,9 @@ public class BufferPool {
 
     private final int numPages;
     private final Map<PageId, Page> idToPages;
-    private final LockManager lockManager;
+    // private final LockManager lockManager;
+    private final Map<PageId, PageLock> pageIdToLocks;
+    private final Map<TransactionId, Set<PageId>> txnToLockedPages;
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -36,7 +36,9 @@ public class BufferPool {
     public BufferPool(int numPages) {
         this.numPages = numPages;
         this.idToPages = new HashMap<>();
-        this.lockManager = new LockManager();
+
+        this.pageIdToLocks = new HashMap<>();
+        this.txnToLockedPages = new HashMap<>();
     }
 
     /**
@@ -56,10 +58,17 @@ public class BufferPool {
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // TODO(k-ye): Not completed yet
-        Page page;
+        // We must update lock manager outside BufferPool's lock. Otherwise no other thread
+        // can access bufferPool.
+        PageLock pl;
         synchronized (this) {
-            page = idToPages.get(pid);
+            txnToLockedPages.computeIfAbsent(tid, t -> new HashSet<>()).add(pid);
+            pl = pageIdToLocks.computeIfAbsent(pid, p -> new PageLock());
+        }
+        pl.acquire(tid, perm);
+
+        synchronized (this) {
+            Page page = idToPages.get(pid);
             if (page == null) {
                 while (idToPages.size() >= numPages) {
                     evictPage();
@@ -67,17 +76,8 @@ public class BufferPool {
                 page = Database.getCatalog().getDbFile(pid.getTableId()).readPage(pid);
                 idToPages.put(pid, page);
             }
+            return page;
         }
-        try {
-            if (perm.equals(Permissions.READ_ONLY)) {
-                lockManager.acquireReaderLock(tid, pid);
-            } else {
-                lockManager.acquireWriterLock(tid, pid);
-            }
-        } catch (InterruptedException e) {
-            throw new TransactionAbortedException();
-        }
-        return page;
     }
 
     /**
@@ -90,7 +90,17 @@ public class BufferPool {
      * @param pid the ID of the page to unlock
      */
     public void releasePage(TransactionId tid, PageId pid) {
-        lockManager.release(tid, pid);
+        synchronized (this) {
+            PageLock pl = pageIdToLocks.get(pid);
+            assert(pl != null);
+            synchronized (pl) {
+                pl.release(tid);
+                pl.notifyAll();
+                if (pl.isClean()) {
+                    pageIdToLocks.remove(pid);
+                }
+            }
+        }
     }
 
     /**
@@ -104,7 +114,11 @@ public class BufferPool {
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        return lockManager.holdsLock(tid, p);
+        PageLock pl = pageIdToLocks.get(p);
+        if (pl == null) {
+            return false;
+        }
+        return pl.holdsLock(tid);
     }
 
     /**
@@ -136,8 +150,9 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // TODO(k-ye): Needs to implement locking for transaction.
         DbFile file = Database.getCatalog().getDbFile(tableId);
+        // I have to say the interface design is very poor... This opens up
+        // so many opportunities for race condition.
         List<Page> pages = file.addTuple(tid, t);
         for (Page page : pages) {
             page.markDirty(true, tid);
@@ -157,11 +172,11 @@ public class BufferPool {
      * @param tid the transaction adding the tuple.
      * @param t the tuple to add
      */
-    public  void deleteTuple(TransactionId tid, Tuple t)
+    public void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, TransactionAbortedException {
-        // TODO(k-ye): Needs to implement locking for transaction.
         DbFile file = Database.getCatalog().getDbFile(t.getRecordId().getPageId().getTableId());
         Page page = file.deleteTuple(tid, t);
+
         page.markDirty(true, tid);
     }
 
@@ -219,7 +234,10 @@ public class BufferPool {
         try {
             for (PageId pageId : idToPages.keySet()) {
                 Page page = idToPages.get(pageId);
-                if (page.isDirty() == null) {
+                // if ((page.isDirty() == null) && !lockManager.isWriterHeld(page.getId())) {
+                PageLock pl = pageIdToLocks.get(pageId);
+                if (pl == null || !pl.isWriterHeld()) {
+                    assert(page.isDirty() == null);
                     // We can only evict a non-dirty page.
                     flushPage(pageId);
                     idToPages.remove(pageId);
