@@ -132,6 +132,23 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        synchronized (this) {
+            for (PageId pageId : txnToLockedPages.get(tid)) {
+                Page page = idToPages.get(pageId);
+                if (page == null) {
+                    continue;
+                }
+                if (commit) {
+                    flushPage(pageId);
+                } else {
+                    idToPages.put(pageId, page.getBeforeImage());
+                }
+            }
+            for (PageId pageId : txnToLockedPages.get(tid)) {
+                releasePage(tid, pageId);
+            }
+            txnToLockedPages.remove(tid);
+        }
     }
 
     /**

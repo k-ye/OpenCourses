@@ -83,7 +83,7 @@ public class HeapPage implements Page {
         -- used by recovery */
     public HeapPage getBeforeImage(){
         try {
-            return new HeapPage(pid,oldData);
+            return new HeapPage(pid, oldData);
         } catch (IOException e) {
             e.printStackTrace();
             //should never happen -- we parsed it OK before!

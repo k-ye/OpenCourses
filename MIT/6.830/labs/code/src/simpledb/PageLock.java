@@ -85,15 +85,6 @@ public class PageLock {
         }
     }
 
-    public void acquireReader(TransactionId txId) {
-        acquire(txId, Permissions.READ_ONLY);
-    }
-
-    public void acquireWriter(TransactionId txId) {
-        acquire(txId, Permissions.READ_WRITE);
-    }
-
-
     public void release(TransactionId txId) {
         invariants();
         if (writeHolder == null) {
