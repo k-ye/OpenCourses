@@ -26,6 +26,7 @@ public class BufferPool {
     private final int numPages;
     private final Map<PageId, Page> idToPages;
     // private final LockManager lockManager;
+    private final DAG<TransactionId> lockDag;
     private final Map<PageId, PageLock> pageIdToLocks;
     private final Map<TransactionId, Set<PageId>> txnToLockedPages;
     /**
@@ -37,6 +38,7 @@ public class BufferPool {
         this.numPages = numPages;
         this.idToPages = new HashMap<>();
 
+        this.lockDag = new DAG<>();
         this.pageIdToLocks = new HashMap<>();
         this.txnToLockedPages = new HashMap<>();
     }
@@ -62,10 +64,14 @@ public class BufferPool {
         // can access bufferPool.
         PageLock pl;
         synchronized (this) {
+            pl = pageIdToLocks.computeIfAbsent(pid, p -> new PageLock(lockDag));
             txnToLockedPages.computeIfAbsent(tid, t -> new HashSet<>()).add(pid);
-            pl = pageIdToLocks.computeIfAbsent(pid, p -> new PageLock());
         }
-        pl.acquire(tid, perm);
+        try {
+            pl.acquire(tid, perm);
+        } catch (PageDeadlockException e) {
+            throw new TransactionAbortedException();
+        }
 
         synchronized (this) {
             Page page = idToPages.get(pid);
@@ -92,12 +98,15 @@ public class BufferPool {
     public void releasePage(TransactionId tid, PageId pid) {
         synchronized (this) {
             PageLock pl = pageIdToLocks.get(pid);
-            assert(pl != null);
+            if (pl == null) {
+                return;
+            }
             synchronized (pl) {
-                pl.release(tid);
-                pl.notifyAll();
-                if (pl.isClean()) {
-                    pageIdToLocks.remove(pid);
+                if (pl.release(tid)) {
+                    pl.notifyAll();
+                    if (pl.isClean()) {
+                        pageIdToLocks.remove(pid);
+                    }
                 }
             }
         }
