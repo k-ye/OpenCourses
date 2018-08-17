@@ -107,13 +107,19 @@ public class HeapFile implements DbFile {
 
         int numPagesSnapshot = numPages();
         for (int i = startPageNo; i < numPagesSnapshot; ++i) {
-            HeapPage page = (HeapPage) bufferPool.getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
-            if (page.getNumEmptySlots() > 0) {
-                page.addTuple(t);
-                result.add(page);
-                break;
-            } else {
-                bufferPool.releasePage(tid, page.getId());
+            HeapPageId pageId = new HeapPageId(getId(), i);
+            bufferPool.acquirePage(tid, pageId, Permissions.READ_WRITE);
+
+            synchronized (bufferPool) {
+                HeapPage page = (HeapPage) bufferPool.getLockedPage(tid, pageId);
+                if (page.getNumEmptySlots() > 0) {
+                    page.addTuple(t);
+                    page.markDirty(true, tid);
+                    result.add(page);
+                    break;
+                } else {
+                    bufferPool.releasePage(tid, page.getId());
+                }
             }
         }
         if (result.isEmpty()) {
@@ -125,8 +131,7 @@ public class HeapFile implements DbFile {
                 }
                 // Otherwise someone else has inserted a new page for us.
             }
-            // Then retrieve it via buffer pool. This sets up
-            // lock manager for the page properly.
+            // Then retrieve it via buffer pool. This setsup lock manager for the page properly.
             return addTuple(tid, t, numPagesSnapshot);
         }
         return result;
@@ -141,9 +146,15 @@ public class HeapFile implements DbFile {
     @Override
     public Page deleteTuple(TransactionId tid, Tuple t)
         throws DbException, TransactionAbortedException {
-        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_WRITE);
-        page.deleteTuple(t);
-        return page;
+        BufferPool bufferPool = Database.getBufferPool();
+        PageId pageId = t.getRecordId().getPageId();
+        bufferPool.acquirePage(tid, pageId, Permissions.READ_WRITE);
+        synchronized (bufferPool) {
+            HeapPage page = (HeapPage) bufferPool.getLockedPage(tid, pageId);
+            page.deleteTuple(t);
+            page.markDirty(true, tid);
+            return page;
+        }
     }
 
     @Override

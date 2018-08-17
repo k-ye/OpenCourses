@@ -103,7 +103,7 @@ public class PageLock {
             writeHolder = txId;
             return TryAcquireResult.make(true, writeHolder);
         }
-        return TryAcquireResult.make(false, writeHolder);
+        return TryAcquireResult.make(false, readHolders);
     }
 
     public boolean tryAcquireWriter(TransactionId txId) {
@@ -140,6 +140,7 @@ public class PageLock {
                 Set<TransactionId> holdersForRollback = new HashSet<>();
                 synchronized (lockDag) {
                     for (TransactionId holder : acquireResult.getHolders()) {
+                        assert(holder != null);
                         if (lockDag.cyclic(txId, holder)) {
                             // Rollback the graph
                             for (TransactionId holder2 : holdersForRollback) {
