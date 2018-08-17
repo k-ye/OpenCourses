@@ -9,12 +9,14 @@ import java.util.Set;
  * Lock for a single page. This class is NOT thread safe!
  */
 public class PageLock {
+    private final PageId pageId;
     private final DAG<TransactionId> lockDag;
     private final Set<TransactionId> readHolders;
     private TransactionId writeHolder;
     private long numWaiters;
 
-    public PageLock(DAG<TransactionId> lockDag) {
+    public PageLock(PageId pageId, DAG<TransactionId> lockDag) {
+        this.pageId = pageId;
         this.lockDag = lockDag;
         this.readHolders = new HashSet<>();
         this.writeHolder = null;
@@ -130,6 +132,7 @@ public class PageLock {
                     if (hasWaited) {
                         numWaiters -= 1;
                     }
+                    // System.out.printf("%s has acquired page %s\n", txId.toString(), pageId.toString());
                     return;
                 }
                 // Did not get the lock.
@@ -141,7 +144,14 @@ public class PageLock {
                 synchronized (lockDag) {
                     for (TransactionId holder : acquireResult.getHolders()) {
                         assert(holder != null);
+                        if (txId.equals(holder)) {
+                            // This happens when |txId| is trying to acquire writer lock,
+                            // but it *and some other transactions* are already
+                            // holding the reader lock.
+                            continue;
+                        }
                         if (lockDag.cyclic(txId, holder)) {
+                            // System.out.printf("WARNING: %s will deadlock with %s\n", txId.toString(), holder.toString());
                             // Rollback the graph
                             for (TransactionId holder2 : holdersForRollback) {
                                 lockDag.remove(txId, holder2);
@@ -150,6 +160,7 @@ public class PageLock {
                         }
                         holdersForRollback.add(holder);
                         lockDag.add(txId, holder);
+                        // System.out.printf("%s is waiting for %s on page %s\n", txId.toString(), holder.toString(), pageId.toString());
                     }
                 }
                 try {
@@ -170,14 +181,17 @@ public class PageLock {
 
     public boolean release(TransactionId txId) {
         invariants();
+        boolean result = false;
         if (writeHolder == null) {
-            return readHolders.remove(txId);
-        }
-        if (writeHolder.equals(txId)) {
+            result = readHolders.remove(txId);
+        } else if (writeHolder.equals(txId)) {
             writeHolder = null;
-            return true;
+            result = true;
         }
-        return false;
+        if (result) {
+            // System.out.printf("%s has released page %s\n", txId.toString(), pageId.toString());
+        }
+        return result;
     }
 
     private void invariants() {

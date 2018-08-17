@@ -48,7 +48,7 @@ public class BufferPool {
         // can access bufferPool.
         PageLock pl;
         synchronized (this) {
-            pl = pageIdToLocks.computeIfAbsent(pid, p -> new PageLock(lockDag));
+            pl = pageIdToLocks.computeIfAbsent(pid, p -> new PageLock(p, lockDag));
             txnToLockedPages.computeIfAbsent(tid, t -> new HashSet<>()).add(pid);
         }
         try {
