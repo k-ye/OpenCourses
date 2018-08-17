@@ -35,7 +35,7 @@ public class PageLock {
         return (readHolders.contains(txId) || writeHolder.equals(txId));
     }
 
-    public boolean isClean() {
+    public synchronized boolean isClean() {
         return ((writeHolder == null) && readHolders.isEmpty() && (numWaiters == 0));
     }
 
@@ -71,6 +71,7 @@ public class PageLock {
         }
     }
 
+    /** Precondition: this lock is held. */
     private TryAcquireResult tryAcquireReaderImpl(TransactionId txId) {
         invariants();
         if (writeHolder != null) {
@@ -82,14 +83,12 @@ public class PageLock {
         return TryAcquireResult.make(true, readHolders);
     }
 
-    public boolean tryAcquireReader(TransactionId txId) {
-        return tryAcquireReaderImpl(txId).isAcquired();
-    }
-
+    /** Precondition: this lock is held. */
     private boolean isSingleReaderLockHolder(TransactionId txId) {
         return ((writeHolder == null) && (readHolders.size() == 1) && readHolders.contains(txId));
     }
 
+    /** Precondition: this lock is held. */
     private TryAcquireResult tryAcquireWriterImpl(TransactionId txId) {
         invariants();
         // Re-entrant is fine.
@@ -108,10 +107,7 @@ public class PageLock {
         return TryAcquireResult.make(false, readHolders);
     }
 
-    public boolean tryAcquireWriter(TransactionId txId) {
-        return tryAcquireReaderImpl(txId).isAcquired();
-    }
-
+    /** Precondition: this lock is held. */
     private TryAcquireResult tryAcquireImpl(TransactionId txId, Permissions perm) {
         if (perm.equals(Permissions.READ_ONLY)) {
             return tryAcquireReaderImpl(txId);
@@ -119,67 +115,61 @@ public class PageLock {
         return tryAcquireWriterImpl(txId);
     }
 
-    public boolean tryAcquire(TransactionId txId, Permissions perm) {
-        return tryAcquireImpl(txId, perm).isAcquired();
-    }
-
-    public void acquire(TransactionId txId, Permissions perm) throws PageDeadlockException {
-        synchronized (this) {
-            boolean hasWaited = false;
-            while (true) {
-                TryAcquireResult acquireResult = tryAcquireImpl(txId, perm);
-                if (acquireResult.isAcquired()) {
-                    if (hasWaited) {
-                        numWaiters -= 1;
+    public synchronized void acquire(TransactionId txId, Permissions perm) throws PageDeadlockException {
+        boolean hasWaited = false;
+        while (true) {
+            TryAcquireResult acquireResult = tryAcquireImpl(txId, perm);
+            if (acquireResult.isAcquired()) {
+                if (hasWaited) {
+                    numWaiters -= 1;
+                }
+                // System.out.printf("%s has acquired page %s\n", txId.toString(), pageId.toString());
+                return;
+            }
+            // Did not get the lock.
+            if (!hasWaited) {
+                numWaiters += 1;
+                hasWaited = true;
+            }
+            Set<TransactionId> holdersForRollback = new HashSet<>();
+            synchronized (lockDag) {
+                for (TransactionId holder : acquireResult.getHolders()) {
+                    assert(holder != null);
+                    if (txId.equals(holder)) {
+                        // This happens when |txId| is trying to acquire writer lock,
+                        // but it *and some other transactions* are already
+                        // holding the reader lock.
+                        continue;
                     }
-                    // System.out.printf("%s has acquired page %s\n", txId.toString(), pageId.toString());
-                    return;
-                }
-                // Did not get the lock.
-                if (!hasWaited) {
-                    numWaiters += 1;
-                    hasWaited = true;
-                }
-                Set<TransactionId> holdersForRollback = new HashSet<>();
-                synchronized (lockDag) {
-                    for (TransactionId holder : acquireResult.getHolders()) {
-                        assert(holder != null);
-                        if (txId.equals(holder)) {
-                            // This happens when |txId| is trying to acquire writer lock,
-                            // but it *and some other transactions* are already
-                            // holding the reader lock.
-                            continue;
-                        }
-                        if (lockDag.cyclic(txId, holder)) {
-                            // System.out.printf("WARNING: %s will deadlock with %s\n", txId.toString(), holder.toString());
-                            // Rollback the graph
-                            for (TransactionId holder2 : holdersForRollback) {
-                                lockDag.remove(txId, holder2);
-                            }
-                            throw new PageDeadlockException();
-                        }
-                        holdersForRollback.add(holder);
-                        lockDag.add(txId, holder);
-                        // System.out.printf("%s is waiting for %s on page %s\n", txId.toString(), holder.toString(), pageId.toString());
-                    }
-                }
-                try {
-                    wait();
-                } catch (InterruptedException e) {
-                    // No op
-                } finally {
-                    synchronized (lockDag) {
+                    if (lockDag.cyclic(txId, holder)) {
+                        // System.out.printf("WARNING: %s will deadlock with %s\n", txId.toString(), holder.toString());
                         // Rollback the graph
-                        for (TransactionId holder : holdersForRollback) {
-                            lockDag.remove(txId, holder);
+                        for (TransactionId holder2 : holdersForRollback) {
+                            lockDag.remove(txId, holder2);
                         }
+                        throw new PageDeadlockException();
+                    }
+                    holdersForRollback.add(holder);
+                    lockDag.add(txId, holder);
+                    // System.out.printf("%s is waiting for %s on page %s\n", txId.toString(), holder.toString(), pageId.toString());
+                }
+            }
+            try {
+                wait();
+            } catch (InterruptedException e) {
+                // No op
+            } finally {
+                synchronized (lockDag) {
+                    // Rollback the graph
+                    for (TransactionId holder : holdersForRollback) {
+                        lockDag.remove(txId, holder);
                     }
                 }
             }
         }
     }
 
-    public boolean release(TransactionId txId) {
+    public synchronized boolean release(TransactionId txId) {
         invariants();
         boolean result = false;
         if (writeHolder == null) {
@@ -189,11 +179,13 @@ public class PageLock {
             result = true;
         }
         if (result) {
+            notifyAll();
             // System.out.printf("%s has released page %s\n", txId.toString(), pageId.toString());
         }
         return result;
     }
 
+    /** Precondition: this lock is held. */
     private void invariants() {
         if (!readHolders.isEmpty()) {
             assert(writeHolder == null);

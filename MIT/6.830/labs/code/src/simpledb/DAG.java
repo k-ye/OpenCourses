@@ -3,8 +3,7 @@ package simpledb;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- */
+/** NOT thread safe */
 public class DAG<T> {
     private final Map<T, Integer> nodesCount;
     private final Map<T, Map<T, Integer>> adjacency;

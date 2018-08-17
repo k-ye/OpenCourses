@@ -110,7 +110,6 @@ public class BufferPool {
         }
         synchronized (pl) {
             if (pl.release(tid)) {
-                pl.notifyAll();
                 if (pl.isClean()) {
                     pageIdToLocks.remove(pid);
                 }
