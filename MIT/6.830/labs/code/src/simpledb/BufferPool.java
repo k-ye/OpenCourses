@@ -44,8 +44,9 @@ public class BufferPool {
     }
 
     public void acquirePage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
-        // We must update lock manager outside BufferPool's lock. Otherwise no other thread
-        // can access bufferPool.
+        // While we update {@code pageIdToLocks} and {@code txnToLockedPages} inside
+        // the lock of {@code this}, we must acquire the page lock outside the lock,
+        // otherwise no other thread can access the buffer pool.
         PageLock pl;
         synchronized (this) {
             pl = pageIdToLocks.computeIfAbsent(pid, p -> new PageLock(p, lockDag));
