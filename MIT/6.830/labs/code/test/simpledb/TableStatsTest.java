@@ -120,22 +120,22 @@ public class TableStatsTest extends SimpleDbTestBase {
 		
 		for (int col = 0; col < 10; col++) {
 			Assert.assertEquals(0.0, s.estimateSelectivity(col, Predicate.Op.EQUALS, aboveMax), 0.001);			
-			// Assert.assertEquals(1.0/32.0, s.estimateSelectivity(col, Predicate.Op.EQUALS, halfMaxMin), 0.015);
+			Assert.assertEquals(1.0/32.0, s.estimateSelectivity(col, Predicate.Op.EQUALS, halfMaxMin), 0.015);
 			Assert.assertEquals(0, s.estimateSelectivity(col, Predicate.Op.EQUALS, belowMin), 0.001);
 
 			Assert.assertEquals(1.0, s.estimateSelectivity(col, Predicate.Op.NOT_EQUALS, aboveMax), 0.001);
-			// Assert.assertEquals(31.0/32.0, s.estimateSelectivity(col, Predicate.Op.NOT_EQUALS, halfMaxMin), 0.015);
+			Assert.assertEquals(31.0/32.0, s.estimateSelectivity(col, Predicate.Op.NOT_EQUALS, halfMaxMin), 0.015);
 			Assert.assertEquals(1.0, s.estimateSelectivity(col, Predicate.Op.NOT_EQUALS, belowMin), 0.015);
 
 			Assert.assertEquals(0.0, s.estimateSelectivity(col, Predicate.Op.GREATER_THAN, aboveMax), 0.001);
 			Assert.assertEquals(0.0, s.estimateSelectivity(col, Predicate.Op.GREATER_THAN, atMax), 0.001);
-			// Assert.assertEquals(0.5, s.estimateSelectivity(col, Predicate.Op.GREATER_THAN, halfMaxMin), 0.1);
+			Assert.assertEquals(0.5, s.estimateSelectivity(col, Predicate.Op.GREATER_THAN, halfMaxMin), 0.1);
 			Assert.assertEquals(31.0/32.0, s.estimateSelectivity(col, Predicate.Op.GREATER_THAN, atMin), 0.05);
 			Assert.assertEquals(1.0, s.estimateSelectivity(col, Predicate.Op.GREATER_THAN, belowMin), 0.001);
 			
 			Assert.assertEquals(1.0, s.estimateSelectivity(col, Predicate.Op.LESS_THAN, aboveMax), 0.001);
 			Assert.assertEquals(1.0, s.estimateSelectivity(col, Predicate.Op.LESS_THAN, atMax), 0.015);
-			// Assert.assertEquals(0.5, s.estimateSelectivity(col, Predicate.Op.LESS_THAN, halfMaxMin), 0.1);
+			Assert.assertEquals(0.5, s.estimateSelectivity(col, Predicate.Op.LESS_THAN, halfMaxMin), 0.1);
 			Assert.assertEquals(0.0, s.estimateSelectivity(col, Predicate.Op.LESS_THAN, atMin), 0.001);
 			Assert.assertEquals(0.0, s.estimateSelectivity(col, Predicate.Op.LESS_THAN, belowMin), 0.001);
 			
