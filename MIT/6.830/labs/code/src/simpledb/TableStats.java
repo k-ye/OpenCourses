@@ -1,5 +1,8 @@
 package simpledb;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /** TableStats represents statistics (e.g., histograms) about base tables in a query */
 public class TableStats {
     
@@ -9,6 +12,14 @@ public class TableStats {
      * though our tests assume that you have at least 100 bins in your histograms.
      */
     static final int NUM_HIST_BINS = 100;
+
+    private final DbFile table;
+    private final TupleDesc tupleDesc;
+    private final int ioCostPerPage;
+    private final int numTuples;
+    private final int numPages;
+    private final Map<Integer, IntHistogram> intFieldToHists;
+    private final Map<Integer, StringHistogram> strFieldToHists;
 
     /**
      * Create a new TableStats object, that keeps track of statistics on each column of a table
@@ -23,8 +34,89 @@ public class TableStats {
     	// You should try to do this reasonably efficiently, but you don't necessarily
     	// have to (for example) do everything in a single scan of the table.
     	// some code goes here
+        this.table = Database.getCatalog().getDbFile(tableid);
+        this.tupleDesc = this.table.getTupleDesc();
+        this.ioCostPerPage = ioCostPerPage;
+
+        this.intFieldToHists = new HashMap<>();
+        this.strFieldToHists = new HashMap<>();
+        this.numTuples = generateStats();
+        this.numPages = (numTuples * tupleDesc.getSize() + BufferPool.PAGE_SIZE - 1) / BufferPool.PAGE_SIZE;
     }
 
+    private int generateStats() {
+        int numTuples = 0;
+        class Interval {
+            private int min;
+            private int max;
+            public Interval() {
+                this.min = Integer.MAX_VALUE;
+                this.max = Integer.MIN_VALUE;
+            }
+
+            public void update(int v) {
+                min = Integer.min(min, v);
+                max = Integer.max(max, v);
+            }
+
+            public int getMin() {
+                return min;
+            }
+
+            public int getMax() {
+                return max;
+            }
+        }
+        // Only int fields need to record min/max.
+        Map<Integer, Interval> intFieldToIntervals = new HashMap<>();
+        for (int i = 0; i < tupleDesc.numFields(); ++i) {
+            if (tupleDesc.getType(i) == Type.INT_TYPE) {
+                intFieldToIntervals.put(i, new Interval());
+            }
+        }
+        DbFileIterator iter = table.iterator(new TransactionId());
+        try {
+            // 1. Construct the int interval
+            iter.open();
+            numTuples = 0;
+            while (iter.hasNext()) {
+                numTuples += 1;
+                Tuple t = iter.next();
+                for (Map.Entry<Integer, Interval> kv : intFieldToIntervals.entrySet()) {
+                    int val = ((IntField) t.getField(kv.getKey())).getValue();
+                    kv.getValue().update(val);
+                }
+            }
+
+            for (int i = 0; i < tupleDesc.numFields(); ++i) {
+                Type type = tupleDesc.getType(i);
+                if (type == Type.INT_TYPE) {
+                    Interval intv = intFieldToIntervals.get(i);
+                    intFieldToHists.put(i, new IntHistogram(NUM_HIST_BINS, intv.getMin(), intv.getMax()));
+                } else if (type == Type.STRING_TYPE) {
+                    strFieldToHists.put(i, new StringHistogram(NUM_HIST_BINS));
+                }
+            }
+            // 2. Construct the histograms
+            iter.rewind();
+            while (iter.hasNext()) {
+                Tuple t = iter.next();
+                for (int i = 0; i < tupleDesc.numFields(); ++i) {
+                    Type type = tupleDesc.getType(i);
+                    if (type == Type.INT_TYPE) {
+                        intFieldToHists.get(i).addValue(((IntField) t.getField(i)).getValue());
+                    } else if (type == Type.STRING_TYPE) {
+                        strFieldToHists.get(i).addValue(((StringField) t.getField(i)).getValue());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            iter.close();
+        }
+        return numTuples;
+    }
     /** 
      * Estimates the
      * cost of sequentially scanning the file, given that the cost to read
@@ -39,8 +131,7 @@ public class TableStats {
      * @return The estimated cost of scanning the table.
      */ 
     public double estimateScanCost() {
-    	// some code goes here
-        return 0;
+        return ioCostPerPage * numPages;
     }
 
     /** 
@@ -52,8 +143,7 @@ public class TableStats {
      * @return The estimated cardinality of the scan with the specified selectivityFactor
      */
     public int estimateTableCardinality(double selectivityFactor) {
-    	// some code goes here
-        return 0;
+        return (int) (numTuples * selectivityFactor);
     }
 
     /** 
@@ -65,8 +155,13 @@ public class TableStats {
      * @return The estimated selectivity (fraction of tuples that satisfy) the predicate
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
-    	// some code goes here
-        return 1.0;
+        Type fieldType = tupleDesc.getType(field);
+        if (fieldType == Type.INT_TYPE) {
+            return intFieldToHists.get(field).estimateSelectivity(op, ((IntField) constant).getValue());
+        } else if (fieldType == Type.STRING_TYPE) {
+            return strFieldToHists.get(field).estimateSelectivity(op, ((StringField) constant).getValue());
+        }
+        throw new RuntimeException("Unknown Type");
     }
 
 }

@@ -6,11 +6,11 @@ import java.util.List;
 /** A class to represent a fixed-width histogram over a single integer-based field.
  */
 public class IntHistogram {
-    private final double min;
-    private final double max;
-    private final double width;
+    private final int min;
+    private final int max;
+    private final int width;
     private int numVals;
-    private final List<Integer> buckets;
+    private final int[] buckets;
     /**
      * Create a new IntHistogram.
      * 
@@ -29,14 +29,12 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
-        this.min = (double) min;
-        this.max = (double) max;
+        this.min = min;
+        this.max = max + 1;
+        buckets = Integer.min(buckets, (this.max - this.min));
         this.width = (this.max - this.min) / buckets;
         this.numVals = 0;
-        this.buckets = new ArrayList<>();
-        for (int i = 0; i < buckets; ++i) {
-            this.buckets.add(0);
-        }
+        this.buckets = new int[buckets];
     }
 
     /**
@@ -44,32 +42,23 @@ public class IntHistogram {
      * @param v Value to add to the histogram
      */
     public void addValue(int v) {
-        numVals += 1;
+        if (inRange(v)) {
+            numVals += 1;
+            int bi = findBucket(v);
+            buckets[bi] += 1;
+        }
+    }
 
-        int bi = findBucket(v);
-        int h = buckets.get(bi);
-        buckets.set(bi, h + 1);
+    private boolean inRange(int v) {
+        return ((min <= v) && (v < max));
     }
 
     private int findBucket(int v) {
-        double dv = (double) v;
-        double dist = dv - min;
-        int index = (int) (Math.floor(dist / width) + 0.01);
-        if (index == buckets.size()) {
-            // This happens when v == max
-            index -= 1;
+        assert(inRange(v));
+        if (v == (max - 1)) {
+            return buckets.length - 1;
         }
-        assert(getLeft(index) <= dv);
-        assert(dv <= getRight(index));
-        return index;
-    }
-
-    private double getLeft(int bi) {
-        return min + (width * bi);
-    }
-
-    private double getRight(int bi) {
-        return getLeft(bi) + width;
+        return ((v - min) / width);
     }
 
     /**
@@ -84,31 +73,21 @@ public class IntHistogram {
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
         switch (op) {
-            case EQUALS:
-                return estimateEq(v);
-            case NOT_EQUALS:
-                return 1.0 - estimateEq(v);
             case LESS_THAN:
                 return estimateLt(v);
             case LESS_THAN_OR_EQ:
-                return estimateLe(v);
+                return estimateLt(v + 1);
             case GREATER_THAN:
-                return 1.0 - estimateLe(v);
+                return 1.0 - estimateSelectivity(Predicate.Op.LESS_THAN_OR_EQ, v);
             case GREATER_THAN_OR_EQ:
-                return 1.0 - estimateLt(v);
+                return 1.0 - estimateSelectivity(Predicate.Op.LESS_THAN, v);
+            case EQUALS:
+                return estimateSelectivity(Predicate.Op.LESS_THAN_OR_EQ, v) - estimateSelectivity(Predicate.Op.LESS_THAN, v);
+            case NOT_EQUALS:
+                return 1.0 - estimateSelectivity(Predicate.Op.EQUALS, v);
             default:
                 throw new RuntimeException("Unsupported Op");
         }
-    }
-
-    private double estimateEq(int v) {
-        if ((v <= min) || (v >= max)) {
-            return 0.0;
-        }
-
-        int bi = findBucket(v);
-        double h = (double) buckets.get(bi);
-        return (h / width) / (double) numVals;
     }
 
     private double estimateLt(int v) {
@@ -120,16 +99,13 @@ public class IntHistogram {
         }
 
         final int bi = findBucket(v);
-        final double bRatio = ((double) v - getLeft(bi)) / width;
-        double sum = bRatio * buckets.get(bi);
+        double sum = 0.0;
         for (int i = 0; i < bi; ++i) {
-            sum += (double) buckets.get(i);
+            sum += (double) buckets[i];
         }
+        final double bRatio = ((double) v - min - (width * bi)) / width;
+        sum += bRatio * buckets[bi];
         return sum / (double) numVals;
-    }
-
-    private double estimateLe(int v) {
-        return (estimateLt(v) + 0.5 * estimateEq(v));
     }
 
     /**
