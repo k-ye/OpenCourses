@@ -1,4 +1,5 @@
 package simpledb;
+import java.lang.reflect.Array;
 import java.util.*;
 import javax.swing.*;
 import javax.swing.tree.*;
@@ -139,7 +140,7 @@ public class JoinOptimizer {
         @return a set of all subsets of the specified size
     */
     @SuppressWarnings("unchecked")
-    public <T> Set<Set<T>> enumerateSubsets(Vector<T> v, int size) {
+    public <T> Set<Set<T>> enumerateSubsetsSlow(Vector<T> v, int size) {
         Set<Set<T>> els = new HashSet<Set<T>>();
         els.add(new HashSet<T>());
         Iterator<Set> it;
@@ -158,7 +159,49 @@ public class JoinOptimizer {
         }
         
         return els;
-            
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> Set<Set<T>> enumerateSubsets(Vector<T> v, int size) {
+        ArrayList<T> cur = new ArrayList<>();
+        Set<Set<T>> result = new HashSet<>();
+        enumerateSubsetsHelper(stripDuplicate(v), size, 0, cur, result);
+        return result;
+    }
+
+    private <T> ArrayList<T> stripDuplicate(Vector<T> v) {
+        Set<T> s = new HashSet<>();
+        for (T e : v) {
+            s.add(e);
+        }
+        ArrayList<T> result = new ArrayList<>();
+        for (T e : s) {
+            result.add(e);
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> void
+    enumerateSubsetsHelper(ArrayList<T> arr, int size, int begin, ArrayList<T> cur, Set<Set<T>> result) {
+        if (cur.size() == size) {
+            Set<T> s = new HashSet<>();
+            for (T e : cur) {
+                s.add(e);
+            }
+            result.add(s);
+            return;
+        }
+        for (int i = begin; i < arr.size(); ++i) {
+            // 1. Exclude arr[i]
+            enumerateSubsetsHelper(arr, size, i + 1, cur, result);
+
+            // 2. Include arr[i]
+            cur.add(arr.get(i));
+            enumerateSubsetsHelper(arr, size, i + 1, cur, result);
+            // Pop out arr[i]
+            cur.remove(cur.size() - 1);
+        }
     }
 
     /**
