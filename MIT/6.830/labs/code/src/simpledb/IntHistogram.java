@@ -52,10 +52,13 @@ public class IntHistogram {
 
     private int findBucket(int v) {
         assert(inRange(v));
-        if (v == (max - 1)) {
-            return buckets.length - 1;
+        int idx = ((v - min) / width);
+        final int numBuckets = buckets.length;
+        if (idx == numBuckets) {
+            idx -= 1;
+            assert((min + width * idx) <= v);
         }
-        return ((v - min) / width);
+        return idx;
     }
 
     /**

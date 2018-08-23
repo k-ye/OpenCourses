@@ -23,7 +23,11 @@ public class PlanCache {
         bestCosts.put(s,cost);
         bestCardinalities.put(s,card);
     }
-    
+
+    void addPlan(Set<LogicalJoinNode> s, CostCard cc) {
+        addPlan(s, cc.cost, cc.card, cc.plan);
+    }
+
     /** Find the best join order in the cache for the specified plan 
         @param s the set of joins to look up the best order for
         @return the best order for s in the cache

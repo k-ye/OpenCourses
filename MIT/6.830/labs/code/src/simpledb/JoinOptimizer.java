@@ -227,10 +227,28 @@ public class JoinOptimizer {
     {
 
         // See the Lab 4 writeup for some hints as to how this function should work.
-
-        // some code goes here
-        //Replace the following
-        return joins;
+        PlanCache pc = new PlanCache();
+        CostCard best = null;
+        for (int sz = 1; sz <= joins.size(); ++sz) {
+            Set<Set<LogicalJoinNode>> permutations = enumerateSubsets(joins, sz);
+            for (Set<LogicalJoinNode> subset : permutations) {
+                CostCard bestSoFar = new CostCard();
+                bestSoFar.cost = Double.MAX_VALUE;
+                bestSoFar.card = -1;
+                bestSoFar.plan = null;
+                for (LogicalJoinNode joinToRemove : subset) {
+                    CostCard costCard = computeCostAndCardOfSubplan(stats, filterSelectivities, joinToRemove, subset, bestSoFar.cost, pc);
+                    if ((costCard != null) && (costCard.cost < bestSoFar.cost)) {
+                        bestSoFar = costCard;
+                    }
+                }
+                pc.addPlan(subset, bestSoFar);
+                if (subset.size() == joins.size()) {
+                    best = bestSoFar;
+                }
+            }
+        }
+        return best.plan;
     } 
  
     //===================== Private Methods =================================
