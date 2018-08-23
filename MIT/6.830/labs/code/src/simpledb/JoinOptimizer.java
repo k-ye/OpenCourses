@@ -1,5 +1,5 @@
 package simpledb;
-import java.lang.reflect.Array;
+
 import java.util.*;
 import javax.swing.*;
 import javax.swing.tree.*;
@@ -139,8 +139,15 @@ public class JoinOptimizer {
         @param size The size of the subsets of interest
         @return a set of all subsets of the specified size
     */
+    public <T> Set<Set<T>> enumerateSubsets(Vector<T> v, int size) {
+        Set<Set<T>> result;
+        // result = enumerateSubsetsOriginal(v, size);
+        result = enumerateSubsetsBitSet(v, size);
+        return result;
+    }
+
     @SuppressWarnings("unchecked")
-    public <T> Set<Set<T>> enumerateSubsetsSlow(Vector<T> v, int size) {
+    public <T> Set<Set<T>> enumerateSubsetsOriginal(Vector<T> v, int size) {
         Set<Set<T>> els = new HashSet<Set<T>>();
         els.add(new HashSet<T>());
         Iterator<Set> it;
@@ -157,52 +164,49 @@ public class JoinOptimizer {
             }
             els = newels;
         }
-        
+        long end = System.currentTimeMillis();
+        System.out.printf("Original generated the subsets in %d milliseconds\n", end - start);
+
         return els;
     }
 
     @SuppressWarnings("unchecked")
-    public <T> Set<Set<T>> enumerateSubsets(Vector<T> v, int size) {
-        ArrayList<T> cur = new ArrayList<>();
-        Set<Set<T>> result = new HashSet<>();
-        enumerateSubsetsHelper(stripDuplicate(v), size, 0, cur, result);
-        return result;
-    }
+    public <T> Set<Set<T>> enumerateSubsetsBitSet(Vector<T> v, int size) {
+        final int vSize = v.size();
+        Set<BitSet> els = new HashSet<>();
+        els.add(new BitSet(vSize));
+        Iterator<Set> it;
 
-    private <T> ArrayList<T> stripDuplicate(Vector<T> v) {
-        Set<T> s = new HashSet<>();
-        for (T e : v) {
-            s.add(e);
-        }
-        ArrayList<T> result = new ArrayList<>();
-        for (T e : s) {
-            result.add(e);
-        }
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private <T> void
-    enumerateSubsetsHelper(ArrayList<T> arr, int size, int begin, ArrayList<T> cur, Set<Set<T>> result) {
-        if (cur.size() == size) {
-            Set<T> s = new HashSet<>();
-            for (T e : cur) {
-                s.add(e);
+        long start = System.currentTimeMillis();
+        for (int sz = 0 ; sz < size; sz++) {
+            Set<BitSet> newels = new HashSet<>();
+            for (BitSet s : els) {
+                for (int i = 0; i < v.size(); ++i) {
+                    if (!s.get(i)) {
+                        BitSet ns = (BitSet) s.clone();
+                        ns.set(i);
+                        newels.add(ns);
+                    }
+                }
             }
-            result.add(s);
-            return;
+            els = newels;
         }
-        for (int i = begin; i < arr.size(); ++i) {
-            // 1. Exclude arr[i]
-            enumerateSubsetsHelper(arr, size, i + 1, cur, result);
 
-            // 2. Include arr[i]
-            cur.add(arr.get(i));
-            enumerateSubsetsHelper(arr, size, i + 1, cur, result);
-            // Pop out arr[i]
-            cur.remove(cur.size() - 1);
+        Set<Set<T>> result = new HashSet<>();
+        for (BitSet s : els) {
+            Set<T> el = new HashSet<>();
+            for (int i = 0; i < vSize; ++i) {
+                if (s.get(i)) {
+                    el.add(v.get(i));
+                }
+            }
+            result.add(el);
         }
+        long end = System.currentTimeMillis();
+        System.out.printf("BitSet generated the subsets in %d milliseconds\n", end - start);
+        return result;
     }
+
 
     /**
      * Compute a logical, reasonably efficient join on the specified
