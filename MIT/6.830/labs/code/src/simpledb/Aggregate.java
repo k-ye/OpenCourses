@@ -8,7 +8,9 @@ import java.util.*;
  * by a single column.
  */
 public class Aggregate extends AbstractDbIterator {
-
+    private final DbIterator child;
+    private final Aggregator aggregator;
+    private AbstractDbIterator aggrIter;
     /**
      * Constructor.  
      *
@@ -22,7 +24,36 @@ public class Aggregate extends AbstractDbIterator {
      * @param aop The aggregation operator to use
      */
     public Aggregate(DbIterator child, int afield, int gfield, Aggregator.Op aop) {
-        // some code goes here
+        this.child = child;
+        this.aggrIter = null;
+
+        TupleDesc td = child.getTupleDesc();
+        Type atype = td.getType(afield);
+        Type gtype;
+        if (gfield == Aggregator.NO_GROUPING) {
+            gtype = Type.INT_TYPE;  // Fake type
+        } else {
+            gtype = td.getType(gfield);
+        }
+
+        if (atype == Type.INT_TYPE) {
+            this.aggregator = new IntAggregator(gfield, gtype, afield, aop);
+        } else {
+            assert (atype == Type.STRING_TYPE);
+            this.aggregator = new StringAggregator(gfield, gtype, afield, aop);
+        }
+    }
+
+    private void initAggrIterIfNull() throws DbException, TransactionAbortedException {
+        if (aggrIter != null) {
+            return;
+        }
+        child.open();
+        while (child.hasNext()) {
+            aggregator.merge(child.next());
+        }
+        child.close();
+        aggrIter = aggregator.iterator();
     }
 
     public static String aggName(Aggregator.Op aop) {
@@ -43,7 +74,8 @@ public class Aggregate extends AbstractDbIterator {
 
     public void open()
         throws NoSuchElementException, DbException, TransactionAbortedException {
-        // some code goes here
+        initAggrIterIfNull();
+        aggrIter.open();
     }
 
     /**
@@ -55,12 +87,15 @@ public class Aggregate extends AbstractDbIterator {
      * Should return null if there are no more tuples.
      */
     protected Tuple readNext() throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        if (aggrIter == null) {
+            return null;
+        }
+        return aggrIter.readNext();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        initAggrIterIfNull();
+        aggrIter.rewind();
     }
 
     /**
@@ -75,11 +110,12 @@ public class Aggregate extends AbstractDbIterator {
      * of the child iterator. 
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return aggregator.getTupleDesc();
     }
 
     public void close() {
-        // some code goes here
+        if (aggrIter != null) {
+            aggrIter.close();
+        }
     }
 }

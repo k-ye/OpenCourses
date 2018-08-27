@@ -53,10 +53,16 @@ public class StringAggregator implements Aggregator {
         return gbFieldIdx != Aggregator.NO_GROUPING;
     }
 
+    @Override
+    public TupleDesc getTupleDesc() {
+        return resultTd;
+    }
+
     /**
      * Merge a new tuple into the aggregate, grouping as indicated in the constructor
      * @param tup the Tuple containing an aggregate field and a group-by field
      */
+    @Override
     public void merge(Tuple tup) {
         assert(tup.getField(aggrFieldIdx).getType().equals(Type.STRING_TYPE));
 
@@ -78,6 +84,7 @@ public class StringAggregator implements Aggregator {
      *   grouping. The aggregateVal is determined by the type of
      *   aggregate specified in the constructor.
      */
+    @Override
     public AbstractDbIterator iterator() {
         if (hasGroupBy()) {
             return new GbResultIter();

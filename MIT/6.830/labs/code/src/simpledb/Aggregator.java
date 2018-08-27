@@ -31,6 +31,8 @@ public interface Aggregator {
         }
     }
 
+    TupleDesc getTupleDesc();
+
     /**
      * Merge a new tuple into the aggregate for a distinct group value;
      * creates a new group aggregate result if the group value has not yet
@@ -44,5 +46,5 @@ public interface Aggregator {
      * Create a DbIterator over group aggregate results.
      * @see simpledb.TupleIterator for a possible helper
      */
-    DbIterator iterator();
+    AbstractDbIterator iterator();
 }
