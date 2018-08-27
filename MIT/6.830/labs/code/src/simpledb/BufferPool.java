@@ -88,7 +88,7 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         acquirePage(tid, pid, perm);
         return getLockedPage(tid, pid);
