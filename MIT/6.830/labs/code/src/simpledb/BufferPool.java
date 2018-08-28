@@ -144,6 +144,9 @@ public class BufferPool {
      */
     public synchronized void transactionComplete(TransactionId tid, boolean commit)
         throws IOException {
+        if (!txnToLockedPages.containsKey(tid)) {
+            return;
+        }
         for (PageId pageId : txnToLockedPages.get(tid)) {
             Page page = idToPages.get(pageId);
             if (page == null) {
