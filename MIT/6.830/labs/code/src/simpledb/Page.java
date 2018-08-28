@@ -51,7 +51,7 @@ public interface Page {
     */
     public Page getBeforeImage();
 
-    /*
+    /**
      * a transaction that wrote this page just committed it.
      * copy current content to the before image.
      */

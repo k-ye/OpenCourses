@@ -154,6 +154,8 @@ public class BufferPool {
             }
             if (commit) {
                 flushPage(pageId);
+                // next abort should only roll back to here
+                page.setBeforeImage();
             } else {
                 idToPages.put(pageId, page.getBeforeImage());
             }
@@ -233,10 +235,17 @@ public class BufferPool {
         if (page == null) {
             return;
         }
-        if (page.isDirty() != null) {
-            Database.getCatalog().getDbFile(pid.getTableId()).writePage(page);
-            page.markDirty(false, null);
-        }
+        // RECOVERY
+        TransactionId dirtier = page.isDirty();
+
+        if (dirtier == null)
+            return;
+
+        Database.getLogFile().logWrite(dirtier, page.getBeforeImage(), page);
+        Database.getLogFile().force();
+
+        Database.getCatalog().getDbFile(pid.getTableId()).writePage(page);
+        page.markDirty(false, null);
     }
 
     /** Write all pages of the specified transaction to disk.
