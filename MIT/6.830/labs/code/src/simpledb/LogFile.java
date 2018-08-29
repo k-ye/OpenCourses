@@ -105,7 +105,7 @@ public class LogFile {
         @param f The log file's name
     */
     public LogFile(File f) throws IOException {
-	this.logFile = f;
+	    this.logFile = f;
         raf = new RandomAccessFile(f, "rw");
         recoveryUndecided = true;
 
@@ -168,6 +168,160 @@ public class LogFile {
         }
     }
 
+    private static class LogRecordBuilder {
+        private final int type;
+        private final long txnId;
+        private final long fileOffset;
+        private final Page beforeImage;
+        private final Page afterImage;
+        private final HashMap<Long, Long> checkpoints;
+
+        public static LogRecordBuilder readFromFile(RandomAccessFile raf) throws IOException {
+            long pos = raf.getFilePointer();
+
+            int type = raf.readInt();
+            long txnId = raf.readLong();
+            Page beforeImage = null;
+            Page afterImage = null;
+            HashMap<Long, Long> checkpoints = null;
+            switch (type) {
+                case UPDATE_RECORD:
+                    beforeImage = readPageData(raf);
+                    afterImage = readPageData(raf);
+                    break;
+                case CHECKPOINT_RECORD:
+                    long numUnread = raf.readInt();
+                    checkpoints = new HashMap<>();
+                    while (numUnread > 0) {
+                        long k = raf.readLong();
+                        long v = raf.readLong();
+                        checkpoints.put(k, v);
+                        numUnread -= 1;
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            long fileOffset = raf.readLong();
+            assert(pos == fileOffset);
+            return new LogRecordBuilder(type, txnId, fileOffset, beforeImage, afterImage, checkpoints);
+        }
+
+        private LogRecordBuilder(int type, long txnId, long fileOffset, Page beforeImage, Page afterImage, HashMap<Long, Long> checkpoints) {
+            this.type = type;
+            this.txnId = txnId;
+            this.fileOffset = fileOffset;
+            this.beforeImage = beforeImage;
+            this.afterImage = afterImage;
+            this.checkpoints = checkpoints;
+        }
+
+        public int getType() {
+            return type;
+        }
+
+        public BeginRecord asBegin() {
+            assert (type == BEGIN_RECORD);
+            return new BeginRecord(txnId, fileOffset);
+        }
+
+        public CommitRecord asCommit() {
+            assert (type == COMMIT_RECORD);
+            return new CommitRecord(txnId, fileOffset);
+        }
+
+        public AbortRecord asAbort() {
+            assert (type == ABORT_RECORD);
+            return new AbortRecord(txnId, fileOffset);
+        }
+
+        public UpdateRecord asUpdate() {
+            assert (type == UPDATE_RECORD);
+            return new UpdateRecord(txnId, fileOffset, beforeImage, afterImage);
+        }
+
+        public CheckpointRecord asCheckpoint() {
+            assert (type == CHECKPOINT_RECORD);
+            return new CheckpointRecord(fileOffset, checkpoints);
+        }
+    }
+
+    private static class LogRecord {
+        private final long fileOffset;
+
+        public LogRecord(long fileOffset) {
+            this.fileOffset = fileOffset;
+        }
+
+        public long getFileOffset() {
+            return fileOffset;
+        }
+    }
+
+    private static class SingleTxnRecord extends LogRecord {
+       private final long txnId;
+
+       public SingleTxnRecord(long txnId, long fileOffset) {
+           super(fileOffset);
+           this.txnId = txnId;
+       }
+
+       public long getTxnId() {
+           return txnId;
+       }
+    }
+
+    private static class BeginRecord extends SingleTxnRecord {
+        public BeginRecord(long txnId, long fileOffset) {
+            super(txnId, fileOffset);
+        }
+    }
+
+    private static class CommitRecord extends SingleTxnRecord {
+        public CommitRecord(long txnId, long fileOffset) {
+            super(txnId, fileOffset);
+        }
+    }
+
+    private static class AbortRecord extends SingleTxnRecord {
+        public AbortRecord(long txnId, long fileOffset) {
+            super(txnId, fileOffset);
+        }
+    }
+
+    private static class UpdateRecord extends SingleTxnRecord {
+        private final Page beforeImage;
+        private final Page afterImage;
+
+        public UpdateRecord(long txnId, long fileOffset, Page beforeImage, Page afterImage) {
+            super(txnId, fileOffset);
+            this.beforeImage = beforeImage;
+            this.afterImage = afterImage;
+        }
+
+        public Page getBeforeImage() {
+            return beforeImage;
+        }
+
+        public Page getAfterImage() {
+            return afterImage;
+        }
+    }
+
+    private static class CheckpointRecord extends LogRecord {
+        private final HashMap<Long, Long> checkpoints;
+
+        public CheckpointRecord(long fileOffset, HashMap<Long, Long> checkpoints) {
+            super(fileOffset);
+            this.checkpoints = checkpoints;
+        }
+
+        public HashMap<Long, Long> getCheckpoints() {
+            return checkpoints;
+        }
+    }
+
     /** Write a commit record to disk for the specified tid,
         and force the log to disk.
 
@@ -194,7 +348,7 @@ public class LogFile {
 
         @see simpledb.Page#getBeforeImage
     */
-    public  synchronized void logWrite(TransactionId tid, Page before,
+    public synchronized void logWrite(TransactionId tid, Page before,
                                        Page after)
         throws IOException  {
         Debug.log("WRITE, offset = " + raf.getFilePointer());
@@ -218,7 +372,7 @@ public class LogFile {
         Debug.log("WRITE OFFSET = " + currentOffset);
     }
 
-    void writePageData(RandomAccessFile raf, Page p) throws IOException{
+    static void writePageData(RandomAccessFile raf, Page p) throws IOException{
         PageId pid = p.getId();
         int pageInfo[] = pid.serialize();
 
@@ -246,7 +400,7 @@ public class LogFile {
         //        Debug.log ("WROTE PAGE DATA, CLASS = " + pageClassName + ", table = " +  pid.getTableId() + ", page = " + pid.pageno());
     }
 
-    Page readPageData(RandomAccessFile raf) throws IOException {
+    static Page readPageData(RandomAccessFile raf) throws IOException {
         PageId pid;
         Page newPage = null;
 
@@ -463,10 +617,27 @@ public class LogFile {
     */
     public void rollback(TransactionId tid)
         throws NoSuchElementException, IOException {
-        synchronized (Database.getBufferPool()) {
+        BufferPool bufferPool = Database.getBufferPool();
+        synchronized (bufferPool) {
             synchronized(this) {
                 preAppend();
-                // some code goes here
+                Long offs = tidToFirstLogRecord.get(tid.getId());
+                if (offs == null) {
+                    throw new NoSuchElementException(tid.toString());
+                }
+
+                raf.seek(offs);
+                while (raf.getFilePointer() < currentOffset) {
+                    LogRecordBuilder builder = LogRecordBuilder.readFromFile(raf);
+                    if (builder.getType() == UPDATE_RECORD) {
+                        UpdateRecord record = builder.asUpdate();
+                        if (record.getTxnId() == tid.getId()) {
+                            Page before = record.getBeforeImage();
+                            Database.getCatalog().getDbFile(before.getId().getTableId()).writePage(before);
+                            bufferPool.forceEvictPage(before.getId());
+                        }
+                    }
+                }
             }
         }
     }

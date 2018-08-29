@@ -255,6 +255,10 @@ public class BufferPool {
         // not necessary for lab1|lab2|lab3
     }
 
+    synchronized void forceEvictPage(PageId pid) {
+        idToPages.remove(pid);
+    }
+
     /**
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.

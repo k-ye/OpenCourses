@@ -51,9 +51,9 @@ public class LogTest extends SimpleDbTestBase {
         }
         scan.close();
         if(count > 1)
-            throw new RuntimeException("LogTest: tuple repeated");
+            throw new RuntimeException(String.format("LogTest: tuple (val=%d) repeated, num=%d", v1, count));
         if(present && count < 1)
-            throw new RuntimeException("LogTest: tuple missing");
+            throw new RuntimeException(String.format("LogTest: tuple (val=%d) missing", v1));
         if(present == false && count > 0)
             throw new RuntimeException("LogTest: tuple present but shouldn't be");
     }
