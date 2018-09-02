@@ -634,7 +634,7 @@ public class LogFile {
                         if (record.getTxnId() == tid.getId()) {
                             Page before = record.getBeforeImage();
                             Database.getCatalog().getDbFile(before.getId().getTableId()).writePage(before);
-                            bufferPool.forceEvictPage(before.getId());
+                            bufferPool.discardPage(before.getId());
                         }
                     }
                 }
@@ -661,10 +661,78 @@ public class LogFile {
         updates of uncommitted transactions are not installed.
     */
     public void recover() throws IOException {
-        synchronized (Database.getBufferPool()) {
+        BufferPool bufferPool = Database.getBufferPool();
+        synchronized (bufferPool) {
             synchronized (this) {
                 recoveryUndecided = false;
                 // some code goes here
+                Map<Long, List<UpdateRecord>> txnToUpdates = new HashMap<>();
+                raf.seek(0);
+                long lastCheckpointPos = raf.readLong();
+                final boolean hasCheckpointRecord = (lastCheckpointPos > 0);
+                if (hasCheckpointRecord) {
+                    raf.seek(lastCheckpointPos);
+                    LogRecordBuilder builder = LogRecordBuilder.readFromFile(raf);
+                    CheckpointRecord cr = builder.asCheckpoint();
+                    long minSeekPos = Long.MAX_VALUE;
+                    for (Map.Entry<Long, Long> kv : cr.getCheckpoints().entrySet()) {
+                        txnToUpdates.put(kv.getKey(), new ArrayList<>());
+                        minSeekPos = Long.min(minSeekPos, kv.getValue());
+                    }
+                    raf.seek(minSeekPos);
+                }
+                while (raf.getFilePointer() < raf.length()) {
+                    LogRecordBuilder builder = LogRecordBuilder.readFromFile(raf);
+                    switch (builder.getType()) {
+                        case BEGIN_RECORD:
+                            txnToUpdates.put(builder.asBegin().getTxnId(), new ArrayList<>());
+                            break;
+                        case UPDATE_RECORD: {
+                                UpdateRecord ur = builder.asUpdate();
+                                List<UpdateRecord> updates = txnToUpdates.get(ur.getTxnId());
+                                if (updates != null) {
+                                    updates.add(ur);
+                                }
+                            }
+                            break;
+                        case COMMIT_RECORD: {
+                                long txnId = builder.asCommit().getTxnId();
+                                List<UpdateRecord> updates = txnToUpdates.get(txnId);
+                                if (updates != null) {
+                                    for (UpdateRecord ur : updates) {
+                                        Page after = ur.getAfterImage();
+                                        Database.getCatalog().getDbFile(after.getId().getTableId()).writePage(after);
+                                        bufferPool.discardPage(after.getId());
+                                    }
+                                    txnToUpdates.remove(txnId);
+                                }
+                            }
+                            break;
+                        case ABORT_RECORD: {
+                                long txnId = builder.asAbort().getTxnId();
+                                List<UpdateRecord> updates = txnToUpdates.get(txnId);
+                                if (updates != null) {
+                                    for (UpdateRecord ur : updates) {
+                                        Page before = ur.getBeforeImage();
+                                        Database.getCatalog().getDbFile(before.getId().getTableId()).writePage(before);
+                                        bufferPool.discardPage(before.getId());
+                                    }
+                                    txnToUpdates.remove(txnId);
+                                }
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                // These transactions were lost in the air.
+                for (Map.Entry<Long, List<UpdateRecord>> kv : txnToUpdates.entrySet()) {
+                    for (UpdateRecord ur : kv.getValue()) {
+                        Page before = ur.getBeforeImage();
+                        Database.getCatalog().getDbFile(before.getId().getTableId()).writePage(before);
+                        bufferPool.discardPage(before.getId());
+                    }
+                }
             }
          }
     }

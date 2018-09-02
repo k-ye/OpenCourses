@@ -55,7 +55,7 @@ public class LogTest extends SimpleDbTestBase {
         if(present && count < 1)
             throw new RuntimeException(String.format("LogTest: tuple (val=%d) missing", v1));
         if(present == false && count > 0)
-            throw new RuntimeException("LogTest: tuple present but shouldn't be");
+            throw new RuntimeException(String.format("LogTest: tuple (val=%d) present but shouldn't be", v1));
     }
 
     // insert tuples

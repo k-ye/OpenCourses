@@ -43,12 +43,13 @@ public class Transaction {
                 Database.getLogFile().logAbort(tid); //does rollback too
             } else {
                 //write all the dirty pages for this transaction out
+                // This design is bad
                 Database.getBufferPool().flushPages(tid);
                 Database.getLogFile().logCommit(tid);
             }
 
             try {
-
+                // This design is so bad
                 Database.getBufferPool().transactionComplete(tid, !abort); // release locks
 
             } catch (IOException e) {

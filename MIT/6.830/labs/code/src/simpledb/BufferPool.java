@@ -25,7 +25,6 @@ public class BufferPool {
 
     private final int numPages;
     private final Map<PageId, Page> idToPages;
-    // private final LockManager lockManager;
     private final DAG<TransactionId> lockDag;
     private final Map<PageId, PageLock> pageIdToLocks;
     private final Map<TransactionId, Set<PageId>> txnToLockedPages;
@@ -222,8 +221,7 @@ public class BufferPool {
         cache.
     */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // only necessary for lab5
+        idToPages.remove(pid);
     }
 
     /**
@@ -253,10 +251,16 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2|lab3
-    }
+        for (PageId pageId : txnToLockedPages.get(tid)) {
+            Page page = idToPages.get(pageId);
+            if (page == null) {
+                continue;
+            }
 
-    synchronized void forceEvictPage(PageId pid) {
-        idToPages.remove(pid);
+            flushPage(pageId);
+            // next abort should only roll back to here
+            page.setBeforeImage();
+        }
     }
 
     /**
