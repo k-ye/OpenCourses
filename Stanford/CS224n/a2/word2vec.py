@@ -57,17 +57,23 @@ def naiveSoftmaxLossAndGradient(
     # Please use the provided softmax function (imported earlier in this file)
     # This numerically stable implementation helps you avoid issues pertaining
     # to integer overflow.
+    # |V|
     allDots = np.dot(outsideVectors, centerWordVec)
+    # |V|
     logits = softmax(allDots)
+    # scalar
     den = np.sum(logits)
+    # |V|
     probs = logits / den
 
     loss = -np.log(probs[outsideWordIdx])
+    # F
     gradCenterVec = np.matmul(
         np.array([probs]), outsideVectors) - outsideVectors[outsideWordIdx, :]
     gradCenterVec = np.squeeze(np.asarray(gradCenterVec))
     # addtional bracket to turn |centerWordVec| into a 2D matrix.
     # See https://stackoverflow.com/questions/5954603/transposing-a-numpy-array
+    # |V| x F
     gradOutsideVecs = np.outer(probs, centerWordVec)
     gradOutsideVecs[outsideWordIdx, :] -= centerWordVec
     # END YOUR CODE
@@ -114,11 +120,30 @@ def negSamplingLossAndGradient(
     indices = [outsideWordIdx] + negSampleWordIndices
 
     # YOUR CODE HERE
+    # F: number of features
+    # (K + 1) x F
+    sampledWordVecs = outsideVectors[indices, :]
+    sampledWordVecs[1:, :] = -sampledWordVecs[1:, :]
+    # (K + 1)
+    sigmoidVals = sigmoid(np.matmul(sampledWordVecs, centerWordVec))
+    sigmoidVals = np.squeeze(np.asarray(sigmoidVals))
 
-    # Please use your implementation of sigmoid in here.
+    loss = -np.sum(np.log(sigmoidVals))
+    # (K + 1)
+    sigmoidFactors = sigmoidVals - 1.0
+    # F
+    gradCenterVec = np.matmul(np.transpose(sampledWordVecs), sigmoidFactors)
+    # |V| x F
+    gradOutsideVecs = np.zeros_like(outsideVectors)
+    # (K + 1) x F
+    sampledGrads = np.outer(sigmoidFactors, centerWordVec)
+    sampledGrads[1:, :] = -sampledGrads[1:, :]
+    # TODO(k-ye): is there a way in numpy to avoid this loop? But given that
+    # |indices| should be small, the loop is probably fine.
+    for i, idx in enumerate(indices):
+        gradOutsideVecs[idx, :] += sampledGrads[i, :]
 
     # END YOUR CODE
-
     return loss, gradCenterVec, gradOutsideVecs
 
 
@@ -165,7 +190,6 @@ def skipgram(currentCenterWord, windowSize, outsideWords, word2Ind,
         curLossAndGrads = word2vecLossAndGradient(
             centerWordVec, outsideWordIdx, outsideVectors, dataset)
         loss += curLossAndGrads[0]
-        # print(f'gradCenterVecs={gradCenterVecs} ')
         gradCenterVecs[centerWordIdx, :] += curLossAndGrads[1]
         gradOutsideVectors += curLossAndGrads[2]
     # END YOUR CODE
