@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 # Save parameters every a few SGD iterations as fail-safe
+import os.path as op
+import numpy as np
+import random
+import glob
+import pickle
 SAVE_PARAMS_EVERY = 5000
 
-import pickle
-import glob
-import random
-import numpy as np
-import os.path as op
 
 def load_saved_params():
     """
@@ -77,7 +77,7 @@ def sgd(f, x0, step, iterations, postprocessing=None, useSaved=False,
     x = x0
 
     if not postprocessing:
-        postprocessing = lambda x: x
+        def postprocessing(x): return x
 
     exploss = None
 
@@ -85,9 +85,10 @@ def sgd(f, x0, step, iterations, postprocessing=None, useSaved=False,
         # You might want to print the progress every few iterations.
 
         loss = None
-        ### YOUR CODE HERE
-
-        ### END YOUR CODE
+        # YOUR CODE HERE
+        loss, grads = f(x)
+        x = x - step * grads
+        # END YOUR CODE
 
         x = postprocessing(x)
         if iter % PRINT_EVERY == 0:
@@ -107,7 +108,7 @@ def sgd(f, x0, step, iterations, postprocessing=None, useSaved=False,
 
 
 def sanity_check():
-    quad = lambda x: (np.sum(x ** 2), x * 2)
+    def quad(x): return (np.sum(x ** 2), x * 2)
 
     print("Running sanity checks...")
     t1 = sgd(quad, 0.5, 0.01, 1000, PRINT_EVERY=100)
