@@ -33,23 +33,10 @@ class PartialParse(object):
         ###
         self._ROOT = 'ROOT'
         self.stack = [self._ROOT]
-        self._buffer = []
-        self.buffer = sentence
+        self.buffer = [w for w in sentence]
         self.dependencies = []
 
         # END YOUR CODE
-
-    @property
-    def buffer(self):
-        return self._buffer
-
-    @buffer.setter
-    def buffer(self, val):
-        # reverse the order so that popping buffer is O(1)
-        self._buffer = [w for w in reversed(val)]
-
-    def done(self):
-        return len(self.buffer) == 0 and len(self.stack) == 1
 
     def parse_step(self, transition):
         """Performs a single parse step by applying the given transition to this partial parse
@@ -66,7 +53,7 @@ class PartialParse(object):
         # 2. Left Arc
         # 3. Right Arc
         if transition == 'S':
-            w = self.buffer.pop()
+            w = self.buffer.pop(0)
             self.stack.append(w)
         elif transition == 'LA':
             s2 = self.stack[-2]
@@ -93,6 +80,9 @@ class PartialParse(object):
         for transition in transitions:
             self.parse_step(transition)
         return self.dependencies
+
+    def done(self):
+        return len(self.buffer) == 0 and len(self.stack) == 1
 
 
 def minibatch_parse(sentences, model, batch_size):
@@ -129,14 +119,16 @@ def minibatch_parse(sentences, model, batch_size):
     # to remove objects from the `unfinished_parses` list. This will free the underlying memory that
     # is being accessed by `partial_parses` and may cause your code to crash.
     partial_parses = [PartialParse(s) for s in sentences]
-    unfinished_parses = partial_parses[:]
+
+    def filter_done_pp(pps):
+        return list(filter(lambda pp: not pp.done(), pps))
+    unfinished_parses = filter_done_pp(partial_parses[:])
     while unfinished_parses:
-        unfinished_parses = list(
-            filter(lambda pp: not pp.done(), unfinished_parses))
         batch_pp = unfinished_parses[:batch_size]
         transitions = model.predict(batch_pp)
         for pp, t in zip(batch_pp, transitions):
             pp.parse_step(t)
+        unfinished_parses = filter_done_pp(unfinished_parses)
 
     dependencies = [pp.dependencies for pp in partial_parses]
     # END YOUR CODE
