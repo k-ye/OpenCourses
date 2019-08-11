@@ -48,6 +48,9 @@ class PartialParse(object):
         # reverse the order so that popping buffer is O(1)
         self._buffer = [w for w in reversed(val)]
 
+    def done(self):
+        return len(self.buffer) == 0 and len(self.stack) == 1
+
     def parse_step(self, transition):
         """Performs a single parse step by applying the given transition to this partial parse
 
@@ -125,7 +128,17 @@ def minibatch_parse(sentences, model, batch_size):
     # contains references to the same objects. Thus, you should NOT use the `del` operator
     # to remove objects from the `unfinished_parses` list. This will free the underlying memory that
     # is being accessed by `partial_parses` and may cause your code to crash.
+    partial_parses = [PartialParse(s) for s in sentences]
+    unfinished_parses = partial_parses[:]
+    while unfinished_parses:
+        unfinished_parses = list(
+            filter(lambda pp: not pp.done(), unfinished_parses))
+        batch_pp = unfinished_parses[:batch_size]
+        transitions = model.predict(batch_pp)
+        for pp, t in zip(batch_pp, transitions):
+            pp.parse_step(t)
 
+    dependencies = [pp.dependencies for pp in partial_parses]
     # END YOUR CODE
 
     return dependencies
