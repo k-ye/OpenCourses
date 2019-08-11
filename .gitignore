@@ -1,7 +1,11 @@
 .DS_Store
-Stanford/CS224n/zips/
-*__pycache__/
-Stanford/CS224n/a2/datasets/
 *.pickle
 *.npy
+*__pycache__/
+Stanford/CS224n/zips/
+Stanford/CS224n/a2/datasets/
+Stanford/CS224n/a2/utils/datasets/
+Stanford/CS224n/a2/word_vectors.png
+Stanford/CS224n/a3/data/
+Stanford/CS224n/a3/results/
 
