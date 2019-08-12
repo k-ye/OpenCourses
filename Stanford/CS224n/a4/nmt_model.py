@@ -74,14 +74,15 @@ class NMT(nn.Module):
         # https://pytorch.org/docs/stable/nn.html#torch.nn.Dropout
         self.encoder = nn.LSTM(embed_size, hidden_size,
                                bias=True, dropout=dropout_rate, bidirectional=True)
-        self.decoder = nn.LSTM(embed_size, hidden_size, bias=True)
+        self.decoder = nn.LSTMCell(
+            embed_size + hidden_size, hidden_size, bias=True)
         double_hidden_size = hidden_size * 2
         self.h_projection = nn.Linear(
             double_hidden_size, hidden_size,  bias=False)
         self.c_projection = nn.Linear(
             double_hidden_size, hidden_size, bias=False)
         self.att_projection = nn.Linear(
-            hidden_size, double_hidden_size, bias=False)
+            double_hidden_size, hidden_size, bias=False)
         self.combined_output_projection = nn.Linear(
             hidden_size, hidden_size * 3, bias=False)
         self.target_vocab_projection = nn.Linear(
@@ -185,9 +186,9 @@ class NMT(nn.Module):
         # transpose (src_len, b, h*2) -> (b, src_len, h*2)
         enc_hiddens = pad_packed_sequence(enc_hiddens, batch_first=True)[0]
         init_decoder_hidden = torch.cat(
-            [last_hidden[i, :, :] for i in range(2)], 1)
+            [last_hidden[i, :, :] for i in range(2)], dim=1)
         init_decoder_cell = torch.cat(
-            [last_cell[i, :, :] for i in range(2)], 1)
+            [last_cell[i, :, :] for i in range(2)], dim=1)
         init_decoder_hidden = self.h_projection(init_decoder_hidden)
         init_decoder_cell = self.h_projection(init_decoder_cell)
         dec_init_state = (init_decoder_hidden, init_decoder_cell)
@@ -259,7 +260,17 @@ class NMT(nn.Module):
         # https://pytorch.org/docs/stable/torch.html#torch.cat
         # Tensor Stacking:
         # https://pytorch.org/docs/stable/torch.html#torch.stack
-
+        enc_hiddens_proj = self.att_projection(enc_hiddens)
+        Y_embed = self.model_embeddings.target(target_padded)
+        for Y_t in torch.split(Y_embed, 1, dim=0):
+            Y_t = torch.squeeze(Y_t, dim=0)
+            Ybar_t = torch.cat([Y_t, o_prev], dim=1)
+            dec_state_t, o_t, e_t = self.step(
+                Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
+            combined_outputs.append(o_t)
+            o_prev = o_t
+            dec_state = dec_state_t
+        combined_outputs = torch.stack(combined_outputs, dim=0)
         # END YOUR CODE
 
         return combined_outputs
