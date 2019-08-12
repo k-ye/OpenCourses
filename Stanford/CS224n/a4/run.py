@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -W ignore::DeprecationWarning ignore::UserWarning
 # -*- coding: utf-8 -*-
 
 """
@@ -345,7 +345,7 @@ def main():
     args = docopt(__doc__)
 
     # Check pytorch version
-    assert(torch.__version__ == "1.2.0"), "Please update your installation of PyTorch. You have {} and you should have version 1.2.0".format(
+    assert(torch.__version__ == "1.0.0"), "Please update your installation of PyTorch. You have {} and you should have version 1.0.0".format(
         torch.__version__)
 
     # seed the random number generators
