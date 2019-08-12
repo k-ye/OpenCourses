@@ -28,13 +28,12 @@ def pad_sents(sents, pad_token):
     """
     sents_padded = []
 
-    ### YOUR CODE HERE (~6 Lines)
-
-
-    ### END YOUR CODE
+    # YOUR CODE HERE (~6 Lines)
+    max_len = max([len(s) for s in sents])
+    sents_padded = [s + [pad_token] * (max_len - len(s)) for s in sents]
+    # END YOUR CODE
 
     return sents_padded
-
 
 
 def read_corpus(file_path, source):
@@ -76,3 +75,12 @@ def batch_iter(data, batch_size, shuffle=False):
 
         yield src_sents, tgt_sents
 
+
+if __name__ == '__main__':
+    sents = [['a', 'b'], ['a', 'b', 'c'], ['x', 'y', 'z'], ['1']]
+    pad_tok = 'z'
+    pad_sents = pad_sents(sents, pad_tok)
+    expected = [['a', 'b', pad_tok], ['a', 'b', 'c'],
+                ['x', 'y', 'z'], ['1', pad_tok, pad_tok]]
+    assert pad_sents == expected
+    print('test pad_sents() passed')
