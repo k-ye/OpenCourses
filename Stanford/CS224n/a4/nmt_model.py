@@ -84,7 +84,7 @@ class NMT(nn.Module):
         self.att_projection = nn.Linear(
             double_hidden_size, hidden_size, bias=False)
         self.combined_output_projection = nn.Linear(
-            hidden_size, hidden_size * 3, bias=False)
+            hidden_size * 3, hidden_size, bias=False)
         self.target_vocab_projection = nn.Linear(
             len(vocab.tgt), hidden_size, bias=False)
         self.dropout = nn.Dropout(dropout_rate)
@@ -326,11 +326,18 @@ class NMT(nn.Module):
         # https://pytorch.org/docs/stable/torch.html#torch.unsqueeze
         # Tensor Squeeze:
         # https://pytorch.org/docs/stable/torch.html#torch.squeeze
-
+        dec_state = self.decoder(Ybar_t, dec_state)
+        # Both size: batch_size x hidden_size
+        dec_hidden, dec_cell = dec_state
+        # batch_size x src_len x 1
+        e_t = torch.bmm(enc_hiddens_proj, torch.unsqueeze(dec_hidden, dim=2))
+        # batch_size x src_len
+        e_t = torch.squeeze(e_t, dim=2)
         # END YOUR CODE
 
         # Set e_t to -inf where enc_masks has 1
         if enc_masks is not None:
+            # after softmax(e_t), all <pad>'s probabilities are 0
             e_t.data.masked_fill_(enc_masks.byte(), -float('inf'))
 
         # YOUR CODE HERE (~6 Lines)
@@ -339,7 +346,7 @@ class NMT(nn.Module):
         # 2. Use batched matrix multiplication between alpha_t and enc_hiddens to obtain the
         # attention output vector, a_t.
         # $$     Hints:
-        ###           - alpha_t is shape (b, src_len)
+        # - alpha_t is shape (b, src_len)
         # - enc_hiddens is shape (b, src_len, 2h)
         # - a_t should be shape (b, 2h)
         # - You will need to do some squeezing and unsqueezing.
@@ -360,7 +367,17 @@ class NMT(nn.Module):
         # https://pytorch.org/docs/stable/torch.html#torch.cat
         # Tanh:
         # https://pytorch.org/docs/stable/torch.html#torch.tanh
-
+        # b x src_len
+        alpha_t = F.softmax(e_t, dim=1)
+        # b x 1 x 2h
+        a_t = torch.bmm(torch.unsqueeze(alpha_t, dim=1), enc_hiddens)
+        # b x 2h
+        a_t = torch.squeeze(a_t, dim=1)
+        # b x 3h
+        U_t = torch.cat([a_t, dec_hidden], dim=1)
+        # b x h
+        V_t = self.combined_output_projection(U_t)
+        O_t = self.dropout(torch.tanh(V_t))
         # END YOUR CODE
 
         combined_output = O_t
