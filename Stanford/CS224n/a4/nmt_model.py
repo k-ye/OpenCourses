@@ -72,7 +72,21 @@ class NMT(nn.Module):
         # https://pytorch.org/docs/stable/nn.html#torch.nn.Linear
         # Dropout Layer:
         # https://pytorch.org/docs/stable/nn.html#torch.nn.Dropout
-
+        self.encoder = nn.LSTM(embed_size, hidden_size,
+                               bias=True, dropout=dropout_rate, bidirectional=True)
+        self.decoder = nn.LSTM(embed_size, hidden_size, bias=True)
+        double_hidden_size = hidden_size * 2
+        self.h_projection = nn.Linear(
+            double_hidden_size, hidden_size,  bias=False)
+        self.c_projection = nn.Linear(
+            double_hidden_size, hidden_size, bias=False)
+        self.att_projection = nn.Linear(
+            hidden_size, double_hidden_size, bias=False)
+        self.combined_output_projection = nn.Linear(
+            hidden_size, hidden_size * 3, bias=False)
+        self.target_vocab_projection = nn.Linear(
+            len(vocab.tgt), hidden_size, bias=False)
+        self.dropout = nn.Dropout(dropout_rate)
         # END YOUR CODE
 
     def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
@@ -142,7 +156,7 @@ class NMT(nn.Module):
         # 2. Compute `enc_hiddens`, `last_hidden`, `last_cell` by applying the encoder to `X`.
         # - Before you can apply the encoder, you need to apply the `pack_padded_sequence` function to X.
         # - After you apply the encoder, you need to apply the `pad_packed_sequence` function to enc_hiddens.
-        # - Note that the shape of the tensor returned by the encoder is (src_len b, h*2) and we want to
+        # - Note that the shape of the tensor returned by the encoder is (src_len, b, h*2) and we want to
         # return a tensor of shape (b, src_len, h*2) as `enc_hiddens`.
         # 3. Compute `dec_init_state` = (init_decoder_hidden, init_decoder_cell):
         # - `init_decoder_hidden`:
@@ -165,7 +179,19 @@ class NMT(nn.Module):
         # https://pytorch.org/docs/stable/torch.html#torch.cat
         # Tensor Permute:
         # https://pytorch.org/docs/stable/tensors.html#torch.Tensor.permute
-
+        X = self.model_embeddings.source(source_padded)
+        enc_input = pack_padded_sequence(X, source_lengths)
+        enc_hiddens, (last_hidden, last_cell) = self.encoder(enc_input)
+        # transpose (src_len, b, h*2) -> (b, src_len, h*2)
+        enc_hiddens = pad_packed_sequence(enc_hiddens, batch_first=True)[0]
+        init_decoder_hidden = torch.cat(
+            [last_hidden[i, :, :] for i in range(2)], 1)
+        init_decoder_cell = torch.cat(
+            [last_cell[i, :, :] for i in range(2)], 1)
+        init_decoder_hidden = self.h_projection(init_decoder_hidden)
+        init_decoder_cell = self.h_projection(init_decoder_cell)
+        dec_init_state = (init_decoder_hidden, init_decoder_cell)
+        # print(f'dec_init_state={dec_init_state}')
         # END YOUR CODE
 
         return enc_hiddens, dec_init_state
