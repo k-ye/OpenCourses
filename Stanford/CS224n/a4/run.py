@@ -44,6 +44,7 @@ import math
 import sys
 import pickle
 import time
+import os
 
 
 from docopt import docopt
@@ -121,6 +122,7 @@ def train(args: Dict):
     valid_niter = int(args['--valid-niter'])
     log_every = int(args['--log-every'])
     model_save_path = args['--save-to']
+    optimizer_save_path = model_save_path + '.optim'
 
     vocab = Vocab.load(args['--vocab'])
 
@@ -130,12 +132,20 @@ def train(args: Dict):
                 vocab=vocab)
     model.train()
 
-    uniform_init = float(args['--uniform-init'])
-    if np.abs(uniform_init) > 0.:
-        print('uniformly initialize parameters [-%f, +%f]' %
-              (uniform_init, uniform_init), file=sys.stderr)
-        for p in model.parameters():
-            p.data.uniform_(-uniform_init, uniform_init)
+    if os.path.isfile(model_save_path):
+        print(
+            f'Picking up the last model snapshot. model_save_path={model_save_path}')
+        saved_params = torch.load(
+            model_save_path, map_location=lambda storage, loc: storage)
+        model.load_state_dict(saved_params['state_dict'])
+    else:
+        print('Initializing the model with random weights')
+        uniform_init = float(args['--uniform-init'])
+        if np.abs(uniform_init) > 0.:
+            print('uniformly initialize parameters [-%f, +%f]' %
+                  (uniform_init, uniform_init), file=sys.stderr)
+            for p in model.parameters():
+                p.data.uniform_(-uniform_init, uniform_init)
 
     vocab_mask = torch.ones(len(vocab.tgt))
     vocab_mask[vocab.tgt['<pad>']] = 0
@@ -146,6 +156,10 @@ def train(args: Dict):
     model = model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=float(args['--lr']))
+    if os.path.isfile(optimizer_save_path):
+        print(
+            f'Picking up the last model optimizer snapshot. optimizer_save_path={optimizer_save_path}')
+        optimizer.load_state_dict(torch.load(optimizer_save_path))
 
     num_trial = 0
     train_iter = patience = cum_loss = report_loss = cum_tgt_words = report_tgt_words = 0
@@ -217,7 +231,8 @@ def train(args: Dict):
 
                 # compute dev. ppl and bleu
                 # dev batch size can be a bit larger
-                dev_ppl = evaluate_ppl(model, dev_data, batch_size=128)
+                # dev_ppl = evaluate_ppl(model, dev_data, batch_size=128)
+                dev_ppl = evaluate_ppl(model, dev_data, batch_size=64)
                 valid_metric = -dev_ppl
 
                 print('validation: iter %d, dev. ppl %f' %
@@ -234,8 +249,7 @@ def train(args: Dict):
                     model.save(model_save_path)
 
                     # also save the optimizers' state
-                    torch.save(optimizer.state_dict(),
-                               model_save_path + '.optim')
+                    torch.save(optimizer.state_dict(), optimizer_save_path)
                 elif patience < int(args['--patience']):
                     patience += 1
                     print('hit patience %d' % patience, file=sys.stderr)
@@ -262,7 +276,7 @@ def train(args: Dict):
                         print('restore parameters of the optimizers',
                               file=sys.stderr)
                         optimizer.load_state_dict(
-                            torch.load(model_save_path + '.optim'))
+                            torch.load(optimizer_save_path))
 
                         # set new lr
                         for param_group in optimizer.param_groups:
