@@ -59,8 +59,8 @@ class VocabEntry(object):
         for i, c in enumerate(self.char_list):
             self.char2id[c] = len(self.char2id)
         self.char_unk = self.char2id['<unk>']
-        self.start_of_word = self.char2id["{"]
-        self.end_of_word = self.char2id["}"]
+        self.start_of_word = self.char2id['{']
+        self.end_of_word = self.char2id['}']
         assert self.start_of_word+1 == self.end_of_word
 
         # Converts integers to characters
@@ -131,6 +131,11 @@ class VocabEntry(object):
         ###
         # You must prepend each word with the `start_of_word` character and append
         # with the `end_of_word` character.
+        def w2chidx(w):
+            result = [self.start_of_word] + [self.char2id[c] for c in w]
+            result.append(self.end_of_word)
+            return result
+        return [[w2chidx(w) for w in s] for s in sents]
 
         # END YOUR CODE
 
@@ -161,8 +166,10 @@ class VocabEntry(object):
         # TODO:
         # Connect `words2charindices()` and `pad_sents_char()` which you've defined in
         # previous parts
-
-        # END YOUR CODE
+        sents_t = pad_sents_char(
+            self.words2charindices(sents), self.char2id['<pad>'])
+        sents_var = torch.tensor(sents_t, dtype=torch.long, device=device)
+        return torch.transpose(sents_var, 0, 1)
 
     def to_input_tensor(self, sents: List[List[str]], device: torch.device) -> torch.Tensor:
         """ Convert list of sentences (words) into tensor with necessary padding for 
