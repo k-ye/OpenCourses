@@ -10,6 +10,7 @@ Anand Dhoot <anandd@stanford.edu>
 Michael Hahn <mhahn2@stanford.edu>
 """
 
+import torch
 import torch.nn as nn
 
 # Do not change these imports; your module names should be
@@ -17,8 +18,8 @@ import torch.nn as nn
 #   `Highway` in the file `highway.py`
 # Uncomment the following two imports once you're ready to run part 1(j)
 
-# from cnn import CNN
-# from highway import Highway
+from cnn import CNN
+from highway import Highway
 
 # End "do not change"
 
@@ -42,7 +43,16 @@ class ModelEmbeddings(nn.Module):
         # End A4 code
 
         # YOUR CODE HERE for part 1j
-
+        self.embed_size = embed_size
+        # char embedding
+        pad_token_idx = vocab.char2id['<pad>']
+        self.embeddings = nn.Embedding(len(vocab.char2id), embed_size, padding_idx=pad_token_idx)
+        # CNN
+        kernel_size = 5
+        self.cnn = CNN(embed_size, embed_size, kernel_size)
+        # Highway
+        dropout_rate = 0.3
+        self.highway = Highway(embed_size, dropout_rate)
         # END YOUR CODE
 
     def forward(self, input):
@@ -60,5 +70,18 @@ class ModelEmbeddings(nn.Module):
         # End A4 code
 
         # YOUR CODE HERE for part 1j
-
-        # END YOUR CODE
+        # (sentence_length, batch_size, max_word_length, embed_size)
+        sents_embed = self.embeddings(input)
+        # (sentence_length, batch_size, embed_size, max_word_length)
+        sents_reshaped = torch.transpose(sents_embed, 2, 3)
+        output = torch.zeros(sents_reshaped.shape[:3], device=input.device)
+        # print(f'sents_reshaped.device={sents_reshaped.device} output.device={output.device}')
+        for i, x_reshaped in enumerate(torch.split(sents_reshaped, 1, dim=0)):
+            # (batch_size, embed_size, max_word_length)
+            x_reshaped = torch.squeeze(x_reshaped, dim=0)
+            # (batch_size, embed)
+            x_conv_out = self.cnn(x_reshaped)
+            # (batch_size, embed)
+            x_word_embed = self.highway(x_conv_out)
+            output[i, :, :] = x_word_embed
+        return output
