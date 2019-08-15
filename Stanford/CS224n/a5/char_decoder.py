@@ -7,6 +7,7 @@ CS224N 2018-19: Homework 5
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class CharDecoder(nn.Module):
@@ -28,7 +29,16 @@ class CharDecoder(nn.Module):
         # Hint: - Use target_vocab.char2id to access the character vocabulary for the target language.
         # - Set the padding_idx argument of the embedding matrix.
         # - Create a new Embedding layer. Do not reuse embeddings created in Part 1 of this assignment.
+        super(CharDecoder, self).__init__()
 
+        self.charDecoder = nn.LSTM(
+            char_embedding_size, hidden_size, bias=True, bidirectional=False)  # should we use dropout?
+        char2id = target_vocab.char2id
+        self.char_output_projection = nn.Linear(
+            hidden_size, len(char2id), bias=True)
+        self.decoderCharEmb = nn.Embedding(
+            len(char2id), char_embedding_size, padding_idx=char2id['<pad>'])
+        self.target_vocab = target_vocab
         # END YOUR CODE
 
     def forward(self, input, dec_hidden=None):
@@ -42,8 +52,15 @@ class CharDecoder(nn.Module):
         """
         # YOUR CODE HERE for part 2b
         # TODO - Implement the forward pass of the character decoder.
-
-        # END YOUR CODE
+        # (word_length, batch, char_embed_size)
+        X = self.decoderCharEmb(input)
+        # hiddens:     (word_length, batch, hidden_size)
+        # last_hidden: a tuple of two tensors, both size are (1, batch, hidden_size)
+        hiddens, last_hidden = self.charDecoder(X, dec_hidden)
+        # (word_length, batch, char_vocab_size)
+        S = self.char_output_projection(hiddens)
+        S = F.softmax(S, dim=2)
+        return S, last_hidden
 
     def train_forward(self, char_sequence, dec_hidden=None):
         """ Forward computation during training.
