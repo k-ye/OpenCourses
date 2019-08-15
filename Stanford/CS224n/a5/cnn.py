@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 
+
 class CNN(nn.Module):
     def __init__(self, embed_size, num_out_channels, kernel_size):
         """
