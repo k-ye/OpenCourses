@@ -57,9 +57,8 @@ class CharDecoder(nn.Module):
         # hiddens:     (word_length, batch, hidden_size)
         # last_hidden: a tuple of two tensors, both size are (1, batch, hidden_size)
         hiddens, last_hidden = self.charDecoder(X, dec_hidden)
-        # (word_length, batch, char_vocab_size)
+        # (word_length, batch, char_vocab_size), do not run softmax on it
         S = self.char_output_projection(hiddens)
-        S = F.softmax(S, dim=2)
         return S, last_hidden
 
     def train_forward(self, char_sequence, dec_hidden=None):
@@ -76,7 +75,22 @@ class CharDecoder(nn.Module):
         # Hint: - Make sure padding characters do not contribute to the cross-entropy loss.
         # - char_sequence corresponds to the sequence x_1 ... x_{n+1} from the handout (e.g., <START>,m,u,s,i,c,<END>).
 
-        # END YOUR CODE
+        # ((length - 1), batch)
+        x_src = char_sequence[:-1, :]
+        # ((length - 1), batch)
+        x_tgt = char_sequence[1:, :]
+        # ((length - 1), batch, char_vocab_size)
+        scores, _ = self.forward(x_src, dec_hidden)
+        ce_loss = nn.CrossEntropyLoss(reduction='sum')
+        # S = F.softmax(S, dim=2)
+
+        # massage the dimensions a bit for CE to work
+        # (batch, char_vocab_size, (length - 1))
+        scores = scores.permute(1, 2, 0)
+        # (batch, (length - 1))
+        x_tgt = torch.t(x_tgt)
+        loss = ce_loss(scores, x_tgt)
+        return loss
 
     def decode_greedy(self, initialStates, device, max_length=21):
         """ Greedy decoding
@@ -95,5 +109,38 @@ class CharDecoder(nn.Module):
         # - Use torch.tensor(..., device=device) to turn a list of character indices into a tensor.
         # - We use curly brackets as start-of-word and end-of-word characters. That is, use the character '{' for <START> and '}' for <END>.
         # Their indices are self.target_vocab.start_of_word and self.target_vocab.end_of_word, respectively.
+        batch_size = initialStates[0].shape[1]
+        # (1, batch_size)
+        prevCharIdx = torch.tensor(
+            [[self.target_vocab.start_of_word] * batch_size], dtype=torch.long, device=device)
+        dec_hidden = initialStates
+        # (batch_size, max_length)
+        output = [[-1] * max_length for _ in range(batch_size)]
+        for i in range(max_length):
+            # (1, batch_size, char_embed_size)
+            charEmbed = self.decoderCharEmb(prevCharIdx)
+            # dec_hidden: a 2-tuple of Tensors of (1, batch_size, hidden_size)
+            _, dec_hidden = self.charDecoder(charEmbed, dec_hidden)
+            # (batch_size, hidden_size)
+            h_t = torch.squeeze(dec_hidden[0], dim=0)
+            # (batch_size, char_vocab_size)
+            S_t = self.char_output_projection(h_t)
+            # (batch_size, char_vocab_size)
+            p_t = F.softmax(S_t, dim=1)
+            # (batch_size)
+            charIdx = torch.argmax(p_t, dim=1)
+            # (1, batch_size)
+            prevCharIdx = torch.unsqueeze(charIdx, dim=0)
+            cil = charIdx.tolist()
+            for b in range(batch_size):
+                output[b][i] = cil[b]
+        output = [''.join([self.target_vocab.id2char[i]
+                           for i in chIdxs]) for chIdxs in output]
 
+        def truncateWord(w):
+            tv = self.target_vocab
+            eow = tv.id2char[tv.end_of_word]
+            return w.split(eow)[0]
+        output = list(map(truncateWord, output))
+        return output
         # END YOUR CODE
