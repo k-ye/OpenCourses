@@ -45,6 +45,12 @@ def pad_sents_char(sents, char_pad_token):
     max_sent_len = max([len(s) for s in sents])
 
     def pad_word(w):
+        diff = max_word_length - len(w)
+        if diff <= 0:
+            eow = w[-1]
+            w = w[:(max_word_length - 1)]
+            w.append(eow)
+            return w
         return w + word_of_pad_chars[:(max_word_length - len(w))]
 
     def pad_sent(s):

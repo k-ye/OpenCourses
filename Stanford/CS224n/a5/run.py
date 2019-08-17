@@ -45,6 +45,7 @@ import math
 import sys
 import pickle
 import time
+import os
 
 
 from docopt import docopt
@@ -123,6 +124,9 @@ def train(args: Dict):
     valid_niter = int(args['--valid-niter'])
     log_every = int(args['--log-every'])
     model_save_path = args['--save-to']
+    optimizer_save_path = model_save_path + '.optim'
+    best_ppl_save_path = model_save_path + '.best.ppl'
+    torch.cuda.empty_cache()
 
     vocab = Vocab.load(args['--vocab'])
 
@@ -132,12 +136,19 @@ def train(args: Dict):
                 vocab=vocab, no_char_decoder=args['--no-char-decoder'])
     model.train()
 
-    uniform_init = float(args['--uniform-init'])
-    if np.abs(uniform_init) > 0.:
-        print('uniformly initialize parameters [-%f, +%f]' %
-              (uniform_init, uniform_init), file=sys.stderr)
-        for p in model.parameters():
-            p.data.uniform_(-uniform_init, uniform_init)
+    if os.path.isfile(model_save_path):
+        print(
+            f'Picking up the last model snapshot. model_save_path={model_save_path}')
+        saved_params = torch.load(
+            model_save_path, map_location=lambda storage, loc: storage)
+        model.load_state_dict(saved_params['state_dict'])
+    else:
+        uniform_init = float(args['--uniform-init'])
+        if np.abs(uniform_init) > 0.:
+            print('uniformly initialize parameters [-%f, +%f]' %
+                  (uniform_init, uniform_init), file=sys.stderr)
+            for p in model.parameters():
+                p.data.uniform_(-uniform_init, uniform_init)
 
     vocab_mask = torch.ones(len(vocab.tgt))
     vocab_mask[vocab.tgt['<pad>']] = 0
@@ -148,12 +159,22 @@ def train(args: Dict):
     model = model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=float(args['--lr']))
+    if os.path.isfile(optimizer_save_path):
+        print(
+            f'Picking up the last model optimizer snapshot. optimizer_save_path={optimizer_save_path}')
+        optimizer.load_state_dict(torch.load(optimizer_save_path))
 
     num_trial = 0
     train_iter = patience = cum_loss = report_loss = cum_tgt_words = report_tgt_words = 0
     cum_examples = report_examples = epoch = valid_num = 0
     hist_valid_scores = []
     train_time = begin_time = time.time()
+
+    if os.path.isfile(best_ppl_save_path):
+        loaded_best_ppl = float(torch.load(best_ppl_save_path))
+        print(
+            f'Picking up the last model best PPL. best_ppl_save_path={best_ppl_save_path} loaded_best_ppl={loaded_best_ppl}')
+        hist_valid_scores.append(loaded_best_ppl)
     print('begin Maximum Likelihood training')
 
     while True:
@@ -162,6 +183,7 @@ def train(args: Dict):
         for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
             train_iter += 1
 
+            torch.cuda.empty_cache()
             optimizer.zero_grad()
 
             batch_size = len(src_sents)
@@ -219,7 +241,8 @@ def train(args: Dict):
 
                 # compute dev. ppl and bleu
                 # dev batch size can be a bit larger
-                dev_ppl = evaluate_ppl(model, dev_data, batch_size=128)
+                torch.cuda.empty_cache()
+                dev_ppl = evaluate_ppl(model, dev_data, batch_size=32)
                 valid_metric = -dev_ppl
 
                 print('validation: iter %d, dev. ppl %f' %
@@ -236,8 +259,8 @@ def train(args: Dict):
                     model.save(model_save_path)
 
                     # also save the optimizers' state
-                    torch.save(optimizer.state_dict(),
-                               model_save_path + '.optim')
+                    torch.save(optimizer.state_dict(), optimizer_save_path)
+                    torch.save(valid_metric, best_ppl_save_path)
                 elif patience < int(args['--patience']):
                     patience += 1
                     print('hit patience %d' % patience, file=sys.stderr)
@@ -264,7 +287,7 @@ def train(args: Dict):
                         print('restore parameters of the optimizers',
                               file=sys.stderr)
                         optimizer.load_state_dict(
-                            torch.load(model_save_path + '.optim'))
+                            torch.load(optimizer_save_path))
 
                         # set new lr
                         for param_group in optimizer.param_groups:
