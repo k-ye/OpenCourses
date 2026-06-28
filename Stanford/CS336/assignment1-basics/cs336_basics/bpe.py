@@ -66,9 +66,8 @@ def pretokenize(input_path: str, begin: int, end: int, special_tokens: list[str]
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     counts: TokenCountMap = defaultdict(int)
     for s in chunk_splits:
-        pretokens: list[str] = re.findall(PAT, s)
-        for tok in pretokens:
-            key = tuple(bytes([b]) for b in tok.encode("utf-8"))
+        for match in re.finditer(PAT, s):
+            key = tuple(bytes([b]) for b in match.group().encode("utf-8"))
             counts[key] += 1
     return counts
 
@@ -151,4 +150,7 @@ def train_bpe_tokenizer(
         total_count_after = sum(new_token_counts.values())
         assert total_count_before == total_count_after
         token_counts = new_token_counts
+    for tok in special_tokens:
+        vocab_id = len(vocabulary)
+        vocabulary[vocab_id] = tok.encode("utf-8")
     return vocabulary, merges
