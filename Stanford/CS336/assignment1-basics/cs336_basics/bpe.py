@@ -5,7 +5,8 @@ from collections import defaultdict
 
 from .pretokenization_example import find_chunk_boundaries
 
-TokenCountMap = defaultdict[tuple[bytes, ...], int]
+type BytePair = tuple[bytes, bytes]
+type TokenCountMap = defaultdict[tuple[bytes, ...], int]
 
 
 def _pretokenize(input_path: str, begin: int, end: int, special_tokens: list[str]) -> TokenCountMap:
@@ -23,6 +24,20 @@ def _pretokenize(input_path: str, begin: int, end: int, special_tokens: list[str
             key = tuple(bytes([b]) for b in tok.encode("utf-8"))
             counts[key] += 1
     return counts
+
+
+def replace_token(token: tuple[bytes, ...], pair: BytePair) -> tuple[bytes, ...]:
+    res = []
+    merged = pair[0] + pair[1]
+    i, n = 0, len(token)
+    while i < n:
+        if i + 1 < n and token[i] == pair[0] and token[i + 1] == pair[1]:
+            res.append(merged)
+            i += 2
+        else:
+            res.append(token[i])
+            i += 1
+    return tuple(res)
 
 
 def train_bpe_tokenizer(
@@ -50,15 +65,15 @@ def train_bpe_tokenizer(
     # merging
     merge_vocab_size = vocab_size - len(special_tokens)
     vocabulary: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
-    merges: list[tuple[bytes, bytes]] = []
+    merges: list[BytePair] = []
     while len(vocabulary) < merge_vocab_size:
-        pair_counts: TokenCountMap = defaultdict(int)
+        pair_counts: defaultdict[BytePair, int] = defaultdict(int)
         bp_to_tokens = defaultdict(set)
-        for tok_tup in token_counts.keys():
-            for a, b in zip(tok_tup[:-1], tok_tup[1:]):
-                bp = (a, b)
-                pair_counts[bp] += 1
-                bp_to_tokens[bp].append(tok_tup)
+        for tok_tup, cnt in token_counts.items():
+            for i, bp in enumerate(zip(tok_tup[:-1], tok_tup[1:])):
+                pair_counts[bp] += cnt
+                bp_to_tokens[bp].add(tok_tup)
+
         max_count = -1
         max_pairs = set()
         for pr, cnt in pair_counts.items():
@@ -68,9 +83,24 @@ def train_bpe_tokenizer(
                 max_pairs.add(pr)
             elif cnt == max_count:
                 max_pairs.add(pr)
-        max_pairs = sorted(max_pairs)
-        merged_pair: tuple[bytes, bytes] = max_pairs[-1]
-        merges.append(merged_pair)
 
+        if not max_pairs:
+            break
+        max_pairs: list[BytePair] = sorted(max_pairs)
+        pair_to_merge = max_pairs[-1]
+        merges.append(pair_to_merge)
+        merged_pair = pair_to_merge[0] + pair_to_merge[1]
+        vocab_id = len(vocabulary)
+        vocabulary[vocab_id] = merged_pair
 
-
+        total_count_before = sum(token_counts.values())
+        new_token_counts: TokenCountMap = defaultdict(int)
+        for tok, cnt in token_counts.items():
+            if tok in bp_to_tokens[pair_to_merge]:
+                new_tok = replace_token(tok, pair_to_merge)
+                new_token_counts[new_tok] += cnt
+            else:
+                new_token_counts[tok] += cnt
+        total_count_after = sum(new_token_counts.values())
+        assert total_count_before == total_count_after
+        token_counts = new_token_counts
