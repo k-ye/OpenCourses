@@ -1,12 +1,14 @@
 import regex as re
 import os
 from typing import BinaryIO
+from collections.abc import Generator
 import multiprocessing as mp
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from collections import defaultdict
 
 type BytePair = tuple[bytes, bytes]
-type TokenCountMap = defaultdict[tuple[bytes, ...], int]
+type TokenSequence = tuple[bytes, ...]
+type TokenCountMap = defaultdict[TokenSequence, int]
 
 
 def find_chunk_boundaries(
@@ -72,7 +74,7 @@ def pretokenize(input_path: str, begin: int, end: int, special_tokens: list[str]
     return counts
 
 
-def replace_token(token: tuple[bytes, ...], pair: BytePair) -> tuple[bytes, ...]:
+def replace_token(token: TokenSequence, pair: BytePair) -> TokenSequence:
     res = []
     merged = pair[0] + pair[1]
     i, n = 0, len(token)
@@ -84,6 +86,9 @@ def replace_token(token: tuple[bytes, ...], pair: BytePair) -> tuple[bytes, ...]
             res.append(token[i])
             i += 1
     return tuple(res)
+
+def get_byte_pairs(token: TokenSequence) -> Generator[BytePair]:
+    yield from zip(token[:-1], token[1:])
 
 
 def train_bpe_tokenizer(
@@ -112,14 +117,19 @@ def train_bpe_tokenizer(
     merge_vocab_size = vocab_size - len(special_tokens)
     vocabulary: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
     merges: list[BytePair] = []
-    while len(vocabulary) < merge_vocab_size:
-        pair_counts: defaultdict[BytePair, int] = defaultdict(int)
-        bp_to_tokens = defaultdict(set)
-        for tok_tup, cnt in token_counts.items():
-            for i, bp in enumerate(zip(tok_tup[:-1], tok_tup[1:])):
-                pair_counts[bp] += cnt
-                bp_to_tokens[bp].add(tok_tup)
 
+    def add_to_vocab(p: bytes):
+        vocab_id = len(vocabulary)
+        vocabulary[vocab_id] = p
+
+    # TODO(k-ye): rename to bp_counts
+    pair_counts: defaultdict[BytePair, int] = defaultdict(int)
+    bp_to_tokens: defaultdict[BytePair, set[TokenSequence]] = defaultdict(set)
+    for token, cnt in token_counts.items():
+        for bp in get_byte_pairs(token):
+            pair_counts[bp] += cnt
+            bp_to_tokens[bp].add(token)
+    while len(vocabulary) < merge_vocab_size:
         max_count = -1
         max_pairs = set()
         for pr, cnt in pair_counts.items():
@@ -132,25 +142,42 @@ def train_bpe_tokenizer(
 
         if not max_pairs:
             break
+        # pick the pair to merge
         max_pairs: list[BytePair] = sorted(max_pairs)
         pair_to_merge = max_pairs[-1]
         merges.append(pair_to_merge)
         merged_pair = pair_to_merge[0] + pair_to_merge[1]
-        vocab_id = len(vocabulary)
-        vocabulary[vocab_id] = merged_pair
+        add_to_vocab(merged_pair)
 
         total_count_before = sum(token_counts.values())
-        new_token_counts: TokenCountMap = defaultdict(int)
-        for tok, cnt in token_counts.items():
-            if tok in bp_to_tokens[pair_to_merge]:
-                new_tok = replace_token(tok, pair_to_merge)
-                new_token_counts[new_tok] += cnt
-            else:
-                new_token_counts[tok] += cnt
-        total_count_after = sum(new_token_counts.values())
+        tokens_to_update = tuple(bp_to_tokens[pair_to_merge]) # freeze the set
+        for token in tokens_to_update:
+            old_cnt = token_counts[token]
+            new_token = replace_token(token, pair_to_merge)
+            # remove the old byte pairs
+            bp_dedup: set[BytePair] = set()
+            for bp in get_byte_pairs(token):
+                pair_counts[bp] -= old_cnt
+                bp_dedup.add(bp)
+                assert pair_counts[bp] >= 0
+                if pair_counts[bp] == 0:
+                    del pair_counts[bp]
+            for bp in bp_dedup:
+                bp_to_tokens[bp].remove(token)
+                if len(bp_to_tokens[bp]) == 0:
+                    del bp_to_tokens[bp]
+            # add the new byte pairs
+            for bp in get_byte_pairs(new_token):
+                pair_counts[bp] += old_cnt
+                bp_to_tokens[bp].add(new_token)
+
+            token_counts[new_token] += old_cnt
+            token_counts[token] -= old_cnt
+            if token_counts[token] == 0:
+                del token_counts[token]
+
+        total_count_after = sum(token_counts.values())
         assert total_count_before == total_count_after
-        token_counts = new_token_counts
     for tok in special_tokens:
-        vocab_id = len(vocabulary)
-        vocabulary[vocab_id] = tok.encode("utf-8")
+        add_to_vocab(tok.encode("utf-8"))
     return vocabulary, merges
