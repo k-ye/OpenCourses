@@ -37,7 +37,7 @@ def train_bpe_tokenizer(
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, desired_num_chunks, special_tokens[0].encode("utf-8"))
 
-    pretoken_counts: TokenCountMap = defaultdict(int)
+    token_counts: TokenCountMap = defaultdict(int)
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futs: list[Future[TokenCountMap]] = []
         for begin, end in zip(boundaries[:-1], boundaries[1:]):
@@ -46,4 +46,31 @@ def train_bpe_tokenizer(
         for f in as_completed(futs):
             counts = f.result()
             for k, v in counts.items():
-                pretoken_counts[k] += v
+                token_counts[k] += v
+    # merging
+    merge_vocab_size = vocab_size - len(special_tokens)
+    vocabulary: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
+    merges: list[tuple[bytes, bytes]] = []
+    while len(vocabulary) < merge_vocab_size:
+        pair_counts: TokenCountMap = defaultdict(int)
+        bp_to_tokens = defaultdict(set)
+        for tok_tup in token_counts.keys():
+            for a, b in zip(tok_tup[:-1], tok_tup[1:]):
+                bp = (a, b)
+                pair_counts[bp] += 1
+                bp_to_tokens[bp].append(tok_tup)
+        max_count = -1
+        max_pairs = set()
+        for pr, cnt in pair_counts.items():
+            if cnt > max_count:
+                max_count = cnt
+                max_pairs.clear()
+                max_pairs.add(pr)
+            elif cnt == max_count:
+                max_pairs.add(pr)
+        max_pairs = sorted(max_pairs)
+        merged_pair: tuple[bytes, bytes] = max_pairs[-1]
+        merges.append(merged_pair)
+
+
+
