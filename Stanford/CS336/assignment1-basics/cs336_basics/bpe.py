@@ -7,7 +7,6 @@ from collections.abc import Generator
 import multiprocessing as mp
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from collections import defaultdict
-import json
 
 type BytePair = tuple[bytes, bytes]
 type TokenSequence = tuple[bytes, ...]
@@ -15,6 +14,7 @@ type TokenCountMap = defaultdict[TokenSequence, int]
 
 PRETOKENIZATION_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 PRETOKENIZATION_PAT_RE = re.compile(PRETOKENIZATION_PAT)
+
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -192,7 +192,7 @@ class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[BytePair], special_tokens: list[str] | None = None):
         self.vocab = vocab
         self.merges = merges
-        self.merge_ranks = {bp:i for i, bp in enumerate(self.merges)}
+        self.merge_ranks = {bp: i for i, bp in enumerate(self.merges)}
         self.special_tokens: set[str] = set()
         self.re_special_tokens: Pattern[str] | None = None
         if special_tokens:
@@ -216,19 +216,8 @@ class Tokenizer:
         merges_filepath: str | os.PathLike,
         special_tokens: list[str] | None = None,
     ):
+        # TODO: Implement when we need it
         raise NotImplementedError
-        with open(vocab_filepath) as f:
-            vocab = json.load(f)
-
-        merges: list[BytePair] = []
-        with open(merges_filepath) and f:
-            for line in f:
-                cleaned_line = line.rstrip()
-                line_split = cleaned_line.split(" ")
-                if line and len(line_split) == 2:
-                    pass
-                else:
-                    raise RuntimeError(f"Bad merge line: {line}")
 
     def encode(self, text: str) -> list[int]:
         if self.re_special_tokens is None:
@@ -248,7 +237,7 @@ class Tokenizer:
         return res
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        # BUG: cross-boundary words
+        # TODO: cross-boundary words
         for s in iterable:
             yield from self.encode(s)
 
@@ -258,7 +247,7 @@ class Tokenizer:
             byte_seq.append(self.vocab[i])
         text_bytes = b"".join(byte_seq)
         return text_bytes.decode("utf-8", errors="replace")
-        
+
     def _merge(self, token: TokenSequence) -> TokenSequence:
         while True:
             best_rank = -1
@@ -274,5 +263,5 @@ class Tokenizer:
             if merge_idx == -1:
                 break
             assert pair_to_merge is not None
-            token = token[:merge_idx] + (pair_to_merge[0] + pair_to_merge[1], ) + token[(merge_idx+2):]
+            token = token[:merge_idx] + (pair_to_merge[0] + pair_to_merge[1],) + token[(merge_idx + 2) :]
         return token
