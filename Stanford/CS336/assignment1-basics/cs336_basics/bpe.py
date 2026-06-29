@@ -188,26 +188,11 @@ def train_bpe_tokenizer(
     return vocabulary, merges
 
 
-def merge_token(token: TokenSequence, merges: list[BytePair]) -> TokenSequence:
-    while True:
-        new_token = None
-        for pr in merges:
-            for i, tbp in enumerate(get_byte_pairs(token)):
-                if tbp == pr:
-                    new_token = token[:i] + (pr[0] + pr[1], ) + token[(i+2):]
-                    break
-            if new_token is not None:
-                token = new_token
-                break
-        if new_token is None:    
-            break
-    return token
-
-
 class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[BytePair], special_tokens: list[str] | None = None):
         self.vocab = vocab
         self.merges = merges
+        self.merge_ranks = {bp:i for i, bp in enumerate(self.merges)}
         self.special_tokens: set[str] = set()
         self.re_special_tokens: Pattern[str] | None = None
         if special_tokens:
@@ -257,7 +242,7 @@ class Tokenizer:
                 continue
             for match in re.finditer(PRETOKENIZATION_PAT_RE, word):
                 token = tuple(bytes([b]) for b in match.group().encode("utf-8"))
-                merged = merge_token(token, self.merges)
+                merged = self._merge(token)
                 for t in merged:
                     res.append(self.vocab_reverse[t])
         return res
@@ -274,4 +259,20 @@ class Tokenizer:
         text_bytes = b"".join(byte_seq)
         return text_bytes.decode("utf-8", errors="replace")
         
-
+    def _merge(self, token: TokenSequence) -> TokenSequence:
+        while True:
+            best_rank = -1
+            merge_idx = -1
+            pair_to_merge = None
+            for i, tbp in enumerate(get_byte_pairs(token)):
+                if tbp in self.merge_ranks:
+                    rank = self.merge_ranks[tbp]
+                    if best_rank == -1 or rank < best_rank:
+                        best_rank = rank
+                        merge_idx = i
+                        pair_to_merge = tbp
+            if merge_idx == -1:
+                break
+            assert pair_to_merge is not None
+            token = token[:merge_idx] + (pair_to_merge[0] + pair_to_merge[1], ) + token[(merge_idx+2):]
+        return token
