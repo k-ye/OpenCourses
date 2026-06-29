@@ -1,7 +1,9 @@
-from cs336_basics.bpe import train_bpe_tokenizer
 import argparse
-from pathlib import Path
 import pickle
+import time
+from pathlib import Path
+
+from cs336_basics.bpe import train_bpe_tokenizer
 
 
 def parse_args():
@@ -16,9 +18,12 @@ def main():
     input_path: Path = args.input
     if not input_path.is_file():
         raise FileNotFoundError(f"Invalid input: {input_path}")
+    start = time.perf_counter()
     vocab, merges = train_bpe_tokenizer(
         input_path, args.vocab_size, special_tokens=["<|endoftext|>"], show_progress=True
     )
+    elapsed = time.perf_counter() - start
+    print(f"Training completed in {elapsed:.2f}s")
 
     base_name = input_path.name.split(".", 1)[0]
     vocab_path = input_path.with_name(f"{base_name}_vocab.pickle")

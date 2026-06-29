@@ -1,12 +1,12 @@
-import regex as re
-import os
-from typing import BinaryIO
-from re import Pattern
-from collections.abc import Iterable, Iterator
-from collections.abc import Generator
 import multiprocessing as mp
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+import os
 from collections import defaultdict
+from collections.abc import Generator, Iterable, Iterator
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from re import Pattern
+from typing import BinaryIO
+
+import regex as re
 from tqdm import tqdm
 
 type BytePair = tuple[bytes, bytes]
