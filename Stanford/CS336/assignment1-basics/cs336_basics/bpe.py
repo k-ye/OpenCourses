@@ -1,6 +1,7 @@
 import regex as re
 import os
 from typing import BinaryIO
+from re import Pattern
 from collections.abc import Iterable, Iterator
 from collections.abc import Generator
 import multiprocessing as mp
@@ -12,6 +13,8 @@ type BytePair = tuple[bytes, bytes]
 type TokenSequence = tuple[bytes, ...]
 type TokenCountMap = defaultdict[TokenSequence, int]
 
+PRETOKENIZATION_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+PRETOKENIZATION_PAT_RE = re.compile(PRETOKENIZATION_PAT)
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -67,10 +70,9 @@ def pretokenize_worker(input_path: str | os.PathLike, begin: int, end: int, spec
         f.seek(begin)
         chunk = f.read(end - begin).decode("utf-8", errors="ignore")
         chunk_splits = re.split(re_special_tokens, chunk)
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     counts: TokenCountMap = defaultdict(int)
     for s in chunk_splits:
-        for match in re.finditer(PAT, s):
+        for match in re.finditer(PRETOKENIZATION_PAT_RE, s):
             key = tuple(bytes([b]) for b in match.group().encode("utf-8"))
             counts[key] += 1
     return counts
@@ -186,13 +188,41 @@ def train_bpe_tokenizer(
     return vocabulary, merges
 
 
+def merge_token(token: TokenSequence, merges: list[BytePair]) -> TokenSequence:
+    while True:
+        new_token = None
+        for pr in merges:
+            for i, tbp in enumerate(get_byte_pairs(token)):
+                if tbp == pr:
+                    new_token = token[:i] + (pr[0] + pr[1], ) + token[(i+2):]
+                    break
+            if new_token is not None:
+                token = new_token
+                break
+        if new_token is None:    
+            break
+    return token
+
+
 class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[BytePair], special_tokens: list[str] | None = None):
         self.vocab = vocab
         self.merges = merges
-        self.special_tokens = None
+        self.special_tokens: set[str] = set()
+        self.re_special_tokens: Pattern[str] | None = None
         if special_tokens:
-            self.special_tokens = special_tokens[:]
+            special_tokens = sorted(special_tokens, key=len, reverse=True)
+            self.special_tokens = set(special_tokens)
+            # using a capture group "(abc|def|gh)", so that special tokens are preserved in
+            # the result of re.split()
+            self.re_special_tokens = re.compile("(" + "|".join([re.escape(t) for t in special_tokens]) + ")")
+            vocab_vals = set(vocab.values())
+            for st in self.special_tokens:
+                st_b = st.encode("utf-8")
+                if st_b not in vocab_vals:
+                    self.vocab[len(self.vocab)] = st_b
+                    vocab_vals.add(st_b)
+        self.vocab_reverse = {v: k for k, v in vocab.items()}
 
     @classmethod
     def from_cls(
@@ -216,10 +246,32 @@ class Tokenizer:
                     raise RuntimeError(f"Bad merge line: {line}")
 
     def encode(self, text: str) -> list[int]:
-        return [i for i in self.encode_iterable([text])]
+        if self.re_special_tokens is None:
+            text_splits = [text]
+        else:
+            text_splits = re.split(self.re_special_tokens, text)
+        res: list[int] = []
+        for word in text_splits:
+            if word in self.special_tokens:
+                res.append(self.vocab_reverse[word.encode("utf-8")])
+                continue
+            for match in re.finditer(PRETOKENIZATION_PAT_RE, word):
+                token = tuple(bytes([b]) for b in match.group().encode("utf-8"))
+                merged = merge_token(token, self.merges)
+                for t in merged:
+                    res.append(self.vocab_reverse[t])
+        return res
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        pass
+        # BUG: cross-boundary words
+        for s in iterable:
+            yield from self.encode(s)
 
     def decode(self, ids: list[int]) -> str:
-        pass
+        byte_seq: list[bytes] = []
+        for i in ids:
+            byte_seq.append(self.vocab[i])
+        text_bytes = b"".join(byte_seq)
+        return text_bytes.decode("utf-8", errors="replace")
+        
+
