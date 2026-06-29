@@ -7,6 +7,7 @@ from collections.abc import Generator
 import multiprocessing as mp
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from collections import defaultdict
+from tqdm import tqdm
 
 type BytePair = tuple[bytes, bytes]
 type TokenSequence = tuple[bytes, ...]
@@ -100,6 +101,8 @@ def train_bpe_tokenizer(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str] = None,
+    *,
+    show_progress: bool = False,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     if not special_tokens:
         raise RuntimeError("Expected non-empty special_tokens")
@@ -119,7 +122,6 @@ def train_bpe_tokenizer(
             for k, v in counts.items():
                 token_counts[k] += v
     # merging
-    merge_vocab_size = vocab_size - len(special_tokens)
     vocabulary: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
     merges: list[BytePair] = []
 
@@ -134,7 +136,12 @@ def train_bpe_tokenizer(
         for bp in get_byte_pairs(token):
             pair_counts[bp] += cnt
             bp_to_tokens[bp].add(token)
-    while len(vocabulary) < merge_vocab_size:
+
+    num_merges = vocab_size - len(special_tokens) - len(vocabulary)
+    merge_steps = range(num_merges)
+    if show_progress:
+        merge_steps = tqdm(merge_steps, desc="Merging BPE pairs")
+    for _ in merge_steps:
         max_count = -1
         max_pairs = set()
         for pr, cnt in pair_counts.items():
