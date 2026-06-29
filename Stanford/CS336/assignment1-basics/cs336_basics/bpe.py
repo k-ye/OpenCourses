@@ -117,7 +117,11 @@ def train_bpe_tokenizer(
         for begin, end in zip(boundaries[:-1], boundaries[1:]):
             f = executor.submit(pretokenize_worker, input_path, begin, end, special_tokens)
             futs.append(f)
-        for f in as_completed(futs):
+
+        completed = as_completed(futs)
+        if show_progress:
+            completed = tqdm(completed, total=len(futs), desc="Pre-tokenizing")
+        for f in completed:
             counts = f.result()
             for k, v in counts.items():
                 token_counts[k] += v
