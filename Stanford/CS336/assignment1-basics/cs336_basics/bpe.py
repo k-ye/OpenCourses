@@ -1,10 +1,12 @@
 import regex as re
 import os
 from typing import BinaryIO
+from collections.abc import Iterable, Iterator
 from collections.abc import Generator
 import multiprocessing as mp
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from collections import defaultdict
+import json
 
 type BytePair = tuple[bytes, bytes]
 type TokenSequence = tuple[bytes, ...]
@@ -58,7 +60,7 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 
-def pretokenize(input_path: str, begin: int, end: int, special_tokens: list[str]) -> TokenCountMap:
+def pretokenize_worker(input_path: str | os.PathLike, begin: int, end: int, special_tokens: list[str]) -> TokenCountMap:
     special_tokens = sorted(special_tokens, key=lambda t: -len(t))
     re_special_tokens = "|".join([re.escape(t) for t in special_tokens])
     with open(input_path, "rb") as f:
@@ -87,12 +89,13 @@ def replace_token(token: TokenSequence, pair: BytePair) -> TokenSequence:
             i += 1
     return tuple(res)
 
+
 def get_byte_pairs(token: TokenSequence) -> Generator[BytePair]:
     yield from zip(token[:-1], token[1:])
 
 
 def train_bpe_tokenizer(
-    input_path: str,
+    input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str] = None,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
@@ -107,7 +110,7 @@ def train_bpe_tokenizer(
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futs: list[Future[TokenCountMap]] = []
         for begin, end in zip(boundaries[:-1], boundaries[1:]):
-            f = executor.submit(pretokenize, input_path, begin, end, special_tokens)
+            f = executor.submit(pretokenize_worker, input_path, begin, end, special_tokens)
             futs.append(f)
         for f in as_completed(futs):
             counts = f.result()
@@ -150,7 +153,7 @@ def train_bpe_tokenizer(
         add_to_vocab(merged_pair)
 
         total_count_before = sum(token_counts.values())
-        tokens_to_update = tuple(bp_to_tokens[pair_to_merge]) # freeze the set
+        tokens_to_update = tuple(bp_to_tokens[pair_to_merge])  # freeze the set
         for token in tokens_to_update:
             old_cnt = token_counts[token]
             new_token = replace_token(token, pair_to_merge)
@@ -181,3 +184,42 @@ def train_bpe_tokenizer(
     for tok in special_tokens:
         add_to_vocab(tok.encode("utf-8"))
     return vocabulary, merges
+
+
+class Tokenizer:
+    def __init__(self, vocab: dict[int, bytes], merges: list[BytePair], special_tokens: list[str] | None = None):
+        self.vocab = vocab
+        self.merges = merges
+        self.special_tokens = None
+        if special_tokens:
+            self.special_tokens = special_tokens[:]
+
+    @classmethod
+    def from_cls(
+        cls,
+        vocab_filepath: str | os.PathLike,
+        merges_filepath: str | os.PathLike,
+        special_tokens: list[str] | None = None,
+    ):
+        raise NotImplementedError
+        with open(vocab_filepath) as f:
+            vocab = json.load(f)
+
+        merges: list[BytePair] = []
+        with open(merges_filepath) and f:
+            for line in f:
+                cleaned_line = line.rstrip()
+                line_split = cleaned_line.split(" ")
+                if line and len(line_split) == 2:
+                    pass
+                else:
+                    raise RuntimeError(f"Bad merge line: {line}")
+
+    def encode(self, text: str) -> list[int]:
+        return [i for i in self.encode_iterable([text])]
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        pass
+
+    def decode(self, ids: list[int]) -> str:
+        pass
