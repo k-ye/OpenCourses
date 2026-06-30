@@ -5,9 +5,9 @@ description = "CS336 Assignment 1"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "einops>=0.8",      # tensor operations
-    "einx>=0.4",        # more general tensor operations
-    "jaxtyping>=0.3",   # type hints for pytorch/jax/numpy
+    "einops>=0.8", # tensor operations
+    "einx>=0.4", # more general tensor operations
+    "jaxtyping>=0.3", # type hints for pytorch/jax/numpy
     "numpy>=2.4",
     "psutil>=7",
     "pytest>=9.0",
@@ -46,5 +46,5 @@ line-length = 120
 "__init__.py" = ["E402", "F401", "F403", "E501"]
 
 [tool.ruff.lint]
-extend-select = ["UP"]
+extend-select = ["UP", "I"]
 ignore = ["F722"]
