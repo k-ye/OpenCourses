@@ -10,7 +10,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics.bpe import Tokenizer, train_bpe_tokenizer
-from cs336_basics.gpt import Linear, Embedding, RMSNorm, SwiGLU
+from cs336_basics.gpt import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding
 
 def run_linear(
     d_in: int,
@@ -210,7 +210,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = RotaryPositionalEmbedding(theta, d_k, max_seq_len, in_query_or_key.device)
+    return rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
