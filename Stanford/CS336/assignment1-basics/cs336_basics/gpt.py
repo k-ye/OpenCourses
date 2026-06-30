@@ -66,9 +66,9 @@ class SwiGLU(torch.nn.Module):
         self.w3 = Linear(d_model, d_ff, device, dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        a = self.w1(x)
+        a: torch.Tensor = self.w1(x)
         silu = a * torch.sigmoid(a)
-        b = self.w3(x)
+        b: torch.Tensor = self.w3(x)
         return self.w2(silu * b)
 
 
@@ -77,6 +77,7 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         super().__init__()
 
         assert d_k % 2 == 0, f"d_k must be even, got {d_k}"
+        self.d_k = d_k
         position_indices = torch.arange(0, max_seq_len, device=device)
         position_indices = rearrange(position_indices, "d -> d 1")
         pair_indices = torch.arange(0, (d_k // 2), device=device)
@@ -118,3 +119,47 @@ def scaled_dot_product_attention(
         scores = scores.masked_fill(~mask, -torch.inf)
     attn = softmax(scores, dim=-1)
     return attn @ V
+
+
+class MultiheadSelfAttention(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        rope: RotaryPositionalEmbedding | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+
+        assert d_model % num_heads == 0
+        self.head_dim = d_model // num_heads
+        self.num_heads = num_heads
+        self.q_proj = Linear(d_model, d_model, device, dtype)
+        self.k_proj = Linear(d_model, d_model, device, dtype)
+        self.v_proj = Linear(d_model, d_model, device, dtype)
+        self.o_proj = Linear(d_model, d_model, device, device)
+
+        self.rope = rope
+        if rope is not None:
+            assert self.head_dim == rope.d_k
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        # x: (batch seq_len d_model)
+        seq_len = x.shape[1]
+        q: torch.Tensor = self.q_proj(x)
+        pat = "... s (h d) -> ... h s d"
+        q = rearrange(q, pat, h=self.num_heads)
+        k: torch.Tensor = self.k_proj(x)
+        k = rearrange(k, pat, h=self.num_heads)
+        v: torch.Tensor = self.v_proj(x)
+        v = rearrange(v, pat, h=self.num_heads)
+        if self.rope is not None:
+            assert token_positions is not None
+            q = self.rope.forward(q, token_positions)
+            k = self.rope.forward(k, token_positions)
+        causal_mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool))
+        out = scaled_dot_product_attention(q, k, v, causal_mask)
+        out = rearrange(out, "... h s d -> ... s (h d)")
+        out = self.o_proj(out)
+        return out
