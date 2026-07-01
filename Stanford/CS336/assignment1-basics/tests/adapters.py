@@ -27,7 +27,7 @@ from cs336_basics.optimizer import (
     AdamW,
     calc_lr_cosine_schedule,
 )
-from cs336_basics.train_model import (
+from cs336_basics.train_utils import (
     do_gradient_clipping,
     get_batch,
     save_checkpoint,
@@ -450,7 +450,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rms = RMSNorm(d_model, eps, weights.device, weights.dtype)
-    rms.load_state_dict({"g": weights})
+    rms.load_state_dict({"weight": weights})
     return rms.forward(in_features)
 
 
