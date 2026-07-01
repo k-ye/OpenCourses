@@ -42,8 +42,8 @@ class RMSNorm(torch.nn.Module):
     ):
         super().__init__()
         self.eps = eps
-        g = torch.ones(d_model, device=device, dtype=dtype)
-        self.g = torch.nn.Parameter(g)
+        weight = torch.ones(d_model, device=device, dtype=dtype)
+        self.weight = torch.nn.Parameter(weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_dtype = x.dtype
@@ -52,7 +52,7 @@ class RMSNorm(torch.nn.Module):
         rms = torch.mean(x * x, dim=-1, keepdim=True)
         rms = torch.sqrt(rms + self.eps)
         # g = rearrange(self.g, "d -> 1 1 d")
-        g = self.g
+        g = self.weight
         result = x * g / rms
         return result.to(in_dtype)
 
@@ -138,7 +138,7 @@ class MultiheadSelfAttention(torch.nn.Module):
         self.q_proj = Linear(d_model, d_model, device, dtype)
         self.k_proj = Linear(d_model, d_model, device, dtype)
         self.v_proj = Linear(d_model, d_model, device, dtype)
-        self.o_proj = Linear(d_model, d_model, device, device)
+        self.output_proj = Linear(d_model, d_model, device, dtype)
 
         self.rope = rope
         if rope is not None:
@@ -161,5 +161,28 @@ class MultiheadSelfAttention(torch.nn.Module):
         causal_mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool))
         out = scaled_dot_product_attention(q, k, v, causal_mask)
         out = rearrange(out, "... h s d -> ... s (h d)")
-        out = self.o_proj(out)
+        out = self.output_proj(out)
         return out
+
+
+class TransformerBlock(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        rope: RotaryPositionalEmbedding | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+        self.ln1 = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.attn = MultiheadSelfAttention(d_model=d_model, num_heads=num_heads, rope=rope, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        a1 = self.attn.forward(self.ln1.forward(x), token_positions)
+        a1 = x + a1
+        a2 = self.ffn.forward(self.ln2.forward(a1))
+        return a1 + a2
