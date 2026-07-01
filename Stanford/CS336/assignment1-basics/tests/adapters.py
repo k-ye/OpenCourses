@@ -20,6 +20,7 @@ from cs336_basics.gpt import (
     scaled_dot_product_attention,
     MultiheadSelfAttention,
     TransformerBlock,
+    TransformerLM,
 )
 
 
@@ -336,6 +337,17 @@ def run_transformer_lm(
     weights: dict[str, Tensor],
     in_indices: Int[Tensor, " batch_size sequence_length"],
 ) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
+    lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    lm.load_state_dict(weights)
+    return lm.forward(in_indices)
     """Given the weights of a Transformer language model and input indices,
     return the output of running a forward pass on the input indices.
 
