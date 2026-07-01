@@ -2,6 +2,8 @@ import math
 
 import torch
 from einops import rearrange
+from collections.abc import Callable
+from typing import Optional
 
 
 class Linear(torch.nn.Module):
@@ -42,8 +44,8 @@ class RMSNorm(torch.nn.Module):
     ):
         super().__init__()
         self.eps = eps
-        g = torch.ones(d_model, device=device, dtype=dtype)
-        self.g = torch.nn.Parameter(g)
+        weight = torch.ones(d_model, device=device, dtype=dtype)
+        self.weight = torch.nn.Parameter(weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_dtype = x.dtype
@@ -52,7 +54,7 @@ class RMSNorm(torch.nn.Module):
         rms = torch.mean(x * x, dim=-1, keepdim=True)
         rms = torch.sqrt(rms + self.eps)
         # g = rearrange(self.g, "d -> 1 1 d")
-        g = self.g
+        g = self.weight
         result = x * g / rms
         return result.to(in_dtype)
 
@@ -138,7 +140,7 @@ class MultiheadSelfAttention(torch.nn.Module):
         self.q_proj = Linear(d_model, d_model, device, dtype)
         self.k_proj = Linear(d_model, d_model, device, dtype)
         self.v_proj = Linear(d_model, d_model, device, dtype)
-        self.o_proj = Linear(d_model, d_model, device, device)
+        self.output_proj = Linear(d_model, d_model, device, dtype)
 
         self.rope = rope
         if rope is not None:
@@ -161,5 +163,77 @@ class MultiheadSelfAttention(torch.nn.Module):
         causal_mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool))
         out = scaled_dot_product_attention(q, k, v, causal_mask)
         out = rearrange(out, "... h s d -> ... s (h d)")
-        out = self.o_proj(out)
+        out = self.output_proj(out)
         return out
+
+
+class TransformerBlock(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        rope: RotaryPositionalEmbedding | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+        self.ln1 = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.attn = MultiheadSelfAttention(d_model=d_model, num_heads=num_heads, rope=rope, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        a1 = self.attn.forward(self.ln1.forward(x), token_positions)
+        a1 = x + a1
+        a2 = self.ffn.forward(self.ln2.forward(a1))
+        return a1 + a2
+
+
+class TransformerLM(torch.nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: float,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(vocab_size, d_model, device, dtype)
+        head_dim = d_model // num_heads
+        rope = RotaryPositionalEmbedding(rope_theta, head_dim, context_length, device)
+        self.layers = torch.nn.ModuleList(
+            [TransformerBlock(d_model, num_heads, d_ff, rope, device, dtype) for _ in range(num_layers)]
+        )
+        self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
+        self.lm_head = Linear(d_model, vocab_size, device, dtype)
+
+    def forward(self, in_indices: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        seq_len = in_indices.shape[1]
+
+        if token_positions is None:
+            token_positions = torch.arange(seq_len, device=in_indices.device)
+
+        x = self.token_embeddings.forward(in_indices)
+        for layer in self.layers:
+            layer: TransformerBlock
+            x = layer.forward(x, token_positions)
+        x = self.ln_final.forward(x)
+        return self.lm_head.forward(x)
+
+
+def calc_cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    max_logits = torch.max(logits, dim=-1, keepdim=True).values
+    shifted = logits - max_logits
+    log_denom = torch.log(torch.sum(torch.exp(shifted), dim=-1))
+
+    targets_indices = rearrange(targets, "... -> ... 1")
+    target_logits = shifted.gather(dim=-1, index=targets_indices)
+    target_logits = rearrange(target_logits, "... 1 -> ...")
+    loss = log_denom - target_logits
+    return loss.mean()
