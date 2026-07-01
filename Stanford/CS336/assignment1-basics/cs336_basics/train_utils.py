@@ -5,12 +5,15 @@ import numpy as np
 
 import os
 
+
 def do_gradient_clipping(
     parameters: Iterable[torch.nn.Parameter],
     max_l2_norm: float,
     eps: float = 1e-6,
 ):
     grads = [p.grad for p in parameters if p.grad is not None]
+    if not grads:
+        return
     l2_norm = torch.sqrt(sum(torch.sum(g * g) for g in grads))
     if l2_norm > max_l2_norm:
         scale = max_l2_norm / (l2_norm + eps)
@@ -35,11 +38,12 @@ def get_batch(
 
     return (x, y)
 
+
 def save_checkpoint(
-        model: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        iteration: int,
-        out: str | os.PathLike | BinaryIO | IO[bytes],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    iteration: int,
+    out: str | os.PathLike | BinaryIO | IO[bytes],
 ):
     obj = {
         "model": model.state_dict(),
@@ -48,10 +52,11 @@ def save_checkpoint(
     }
     torch.save(obj, out)
 
+
 def load_checkpoint(
-        src: str | os.PathLike | BinaryIO | IO[bytes],
-        model: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
+    src: str | os.PathLike | BinaryIO | IO[bytes],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
 ) -> int:
     obj = torch.load(src)
     model.load_state_dict(obj["model"])
