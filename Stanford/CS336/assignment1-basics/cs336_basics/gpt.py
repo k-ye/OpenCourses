@@ -2,6 +2,8 @@ import math
 
 import torch
 from einops import rearrange
+from collections.abc import Callable
+from typing import Optional
 
 
 class Linear(torch.nn.Module):
