@@ -57,13 +57,11 @@ def encode_to_npy(tokenizer: Tokenizer, data_path: Path) -> Path:
 
 def main():
     args = parse_args()
-
-    with open(args.bpe_vocab, "rb") as f:
-        vocab = pickle.load(f)
-    with open(args.bpe_merges, "rb") as f:
-        merges = pickle.load(f)
-
-    tokenizer = Tokenizer(vocab, merges, special_tokens=["<|endoftext|>"])
+    tokenizer = Tokenizer.from_files(
+        args.bpe_vocab,
+        args.bpe_merges,
+        special_tokens=["<|endoftext|>"],
+    )
 
     encode_to_npy(tokenizer, args.train_data)
     encode_to_npy(tokenizer, args.val_data)

@@ -2,7 +2,7 @@ import math
 
 import torch
 from einops import rearrange
-
+import os
 
 class Linear(torch.nn.Module):
     def __init__(
@@ -210,6 +210,10 @@ class TransformerLM(torch.nn.Module):
         )
         self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
         self.lm_head = Linear(d_model, vocab_size, device, dtype)
+
+    @classmethod
+    def from_dir(cls, model_dir: str | os.PathLike):
+        pass
 
     def forward(self, in_indices: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         seq_len = in_indices.shape[1]
