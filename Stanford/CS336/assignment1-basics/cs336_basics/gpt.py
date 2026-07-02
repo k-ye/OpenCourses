@@ -232,6 +232,8 @@ class TransformerLM(torch.nn.Module):
             with run_args_path.open() as f:
                 args = json.load(f)
             model_config = {key: args[key] for key in KEYS}
+            with model_config_path.open("w") as f:
+                json.dump(model_config, f, indent=2)
         # validate
         for key in KEYS:
             if key not in model_config:
