@@ -61,9 +61,10 @@ def parse_args():
 def validate_args(args):
     if args.lr_cosine_cycle_iters <= args.lr_warmup_iters:
         raise ValueError(f"lr_cosine_cycle_iters={args.lr_cosine_cycle_iters} too small")
-    
+
     if args.d_model % args.num_heads != 0:
         raise ValueError("Bad num_heads")
+
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -84,13 +85,13 @@ def pick_device(dev_str: str) -> torch.device:
 
 def main():
     logging.basicConfig(
-      level=logging.INFO,
-      format="%(asctime)s %(levelname)s %(message)s",
-      datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     args = parse_args()
-    
+
     out_dir: pathlib.Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     args_path = out_dir / "args.json"
@@ -98,7 +99,7 @@ def main():
         json.dump(vars(args), f, indent=2, default=str, sort_keys=True)
 
     validate_args(args)
-    
+
     set_seed(args.seed)
 
     device = pick_device(args.device)
@@ -144,9 +145,9 @@ def main():
         )
         for group in optimizer.param_groups:
             group["lr"] = lr
-        
+
         x, y = get_batch(train_data, args.batch_size, args.context_len, str(device))
-        
+
         optimizer.zero_grad()
         logits = model(x)
         loss = calc_cross_entropy(logits, y)
@@ -175,10 +176,11 @@ def main():
             ckpt_path = out_dir / f"ckpt_iter{it}.pt"
             save_checkpoint(model, optimizer, it, ckpt_path)
             logging.info("saved checkpoint: %s", ckpt_path)
-    
+
     final_path = out_dir / "ckpt_final.pt"
     save_checkpoint(model, optimizer, args.max_iters, final_path)
     logging.info("saved final checkpoint: %s", final_path)
+
 
 if __name__ == "__main__":
     main()
