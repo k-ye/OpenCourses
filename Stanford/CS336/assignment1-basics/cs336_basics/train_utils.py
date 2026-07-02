@@ -2,8 +2,21 @@ import torch
 from typing import Iterable, BinaryIO, IO
 import numpy.typing as npt
 import numpy as np
+from einops import rearrange
 
 import os
+
+
+def calc_cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    max_logits = torch.max(logits, dim=-1, keepdim=True).values
+    shifted = logits - max_logits
+    log_denom = torch.log(torch.sum(torch.exp(shifted), dim=-1))
+
+    targets_indices = rearrange(targets, "... -> ... 1")
+    target_logits = shifted.gather(dim=-1, index=targets_indices)
+    target_logits = rearrange(target_logits, "... 1 -> ...")
+    loss = log_denom - target_logits
+    return loss.mean()
 
 
 def do_gradient_clipping(

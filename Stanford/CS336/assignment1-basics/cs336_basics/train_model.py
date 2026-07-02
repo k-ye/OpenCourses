@@ -1,6 +1,6 @@
-from cs336_basics.gpt import TransformerLM, calc_cross_entropy
+from cs336_basics.gpt import TransformerLM
 from cs336_basics.optimizer import AdamW, calc_lr_cosine_schedule
-from cs336_basics.train_utils import do_gradient_clipping, get_batch, save_checkpoint
+from cs336_basics.train_utils import calc_cross_entropy, do_gradient_clipping, get_batch, save_checkpoint
 
 import argparse
 import logging

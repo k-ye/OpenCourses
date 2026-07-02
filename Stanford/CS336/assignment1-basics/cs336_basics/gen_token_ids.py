@@ -7,6 +7,7 @@ from cs336_basics.bpe import Tokenizer
 
 LOG_INTERVAL = 1_000_000
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train-data", type=Path, required=True)
@@ -16,10 +17,12 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def get_token_ids_path(data_path: Path) -> Path:
     base_name = data_path.name.split(".", 1)[0]
     res = data_path.with_name(f"{base_name}_token_ids.npy")
     return res
+
 
 def encode_to_npy(tokenizer: Tokenizer, data_path: Path) -> Path:
     def count_token_ids() -> int:
@@ -51,6 +54,7 @@ def encode_to_npy(tokenizer: Tokenizer, data_path: Path) -> Path:
     arr.flush()
     return out_path
 
+
 def main():
     args = parse_args()
 
@@ -64,5 +68,6 @@ def main():
     encode_to_npy(tokenizer, args.train_data)
     encode_to_npy(tokenizer, args.val_data)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
