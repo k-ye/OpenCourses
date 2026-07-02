@@ -8,6 +8,7 @@ from typing import BinaryIO
 
 import regex as re
 from tqdm import tqdm
+import pickle
 
 type BytePair = tuple[bytes, bytes]
 type TokenSequence = tuple[bytes, ...]
@@ -221,14 +222,18 @@ class Tokenizer:
         self.vocab_reverse = {v: k for k, v in vocab.items()}
 
     @classmethod
-    def from_cls(
+    def from_files(
         cls,
         vocab_filepath: str | os.PathLike,
         merges_filepath: str | os.PathLike,
         special_tokens: list[str] | None = None,
     ):
-        # TODO: Implement when we need it
-        raise NotImplementedError
+        with open(vocab_filepath, "rb") as f:
+            vocab = pickle.load(f)
+        with open(merges_filepath, "rb") as f:
+            merges = pickle.load(f)
+
+        return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
         if self.re_special_tokens is None:
