@@ -1,6 +1,7 @@
 from cs336_basics.gpt import TransformerLM
 from cs336_basics.optimizer import AdamW, calc_lr_cosine_schedule
 from cs336_basics.train_utils import calc_cross_entropy, do_gradient_clipping, get_batch, save_checkpoint
+from cs336_basics.cli_utils import add_device_dtype_args, pick_device, pick_dtype, set_seed
 
 import argparse
 import logging
@@ -24,8 +25,7 @@ def parse_args():
     parser.add_argument("--out-dir", required=True, type=pathlib.Path)
     parser.add_argument("--seed", type=int, default=0)
 
-    parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda", "mps"])
-    parser.add_argument("--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16", "float16"])
+    add_device_dtype_args(parser)
     parser.add_argument("--max-iters", type=int, default=10_000)
     parser.add_argument("--eval-interval", type=int, default=100)
     parser.add_argument("--eval-iters", type=int, default=10)
@@ -66,23 +66,6 @@ def validate_args(args):
         raise ValueError("Bad num_heads")
 
 
-def set_seed(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-
-
-def pick_device(dev_str: str) -> torch.device:
-    if dev_str == "cuda":
-        if not torch.cuda.is_available():
-            dev_str = "cpu"
-    dev = torch.device(dev_str)
-    return dev
-
-
 def main():
     logging.basicConfig(
         level=logging.INFO,
@@ -103,12 +86,7 @@ def main():
     set_seed(args.seed)
 
     device = pick_device(args.device)
-    DTYPES = {
-        "float32": torch.float32,
-        "bfloat16": torch.bfloat16,
-        "float16": torch.float16,
-    }
-    dtype = DTYPES[args.dtype]
+    dtype = pick_dtype(device, args.dtype)
 
     model = TransformerLM(
         vocab_size=args.vocab_size,

@@ -205,6 +205,7 @@ class TransformerLM(torch.nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
+        self.context_length = context_length
         self.token_embeddings = Embedding(vocab_size, d_model, device, dtype)
         head_dim = d_model // num_heads
         rope = RotaryPositionalEmbedding(rope_theta, head_dim, context_length, device)
