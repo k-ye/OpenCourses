@@ -3,6 +3,9 @@ import math
 import torch
 from einops import rearrange
 import os
+import json
+from pathlib import Path
+
 
 class Linear(torch.nn.Module):
     def __init__(
@@ -212,8 +215,33 @@ class TransformerLM(torch.nn.Module):
         self.lm_head = Linear(d_model, vocab_size, device, dtype)
 
     @classmethod
-    def from_dir(cls, model_dir: str | os.PathLike):
-        pass
+    def from_dir(
+        cls, model_dir: str | os.PathLike, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ):
+        KEYS = ["vocab_size", "context_length", "d_model", "num_layers", "num_heads", "d_ff", "rope_theta"]
+        model_dir = Path(model_dir)
+        model_config_path = model_dir / "model_config.json"
+        if model_config_path.is_file():
+            with model_config_path.open() as f:
+                model_config = json.load(f)
+        else:
+            run_args_path = model_dir / "args.json"
+            if not run_args_path.is_file():
+                raise ValueError(f"missing model_config.json and args.json: {model_dir}")
+            with run_args_path.open() as f:
+                args = json.load(f)
+            model_config = {key: args[key] for key in KEYS}
+        # validate
+        for key in KEYS:
+            if key not in model_config:
+                raise ValueError(f"invalid model config, missing key={key}")
+        model = cls(**model_config, device=device, dtype=dtype)
+
+        ckpt_path = model_dir / "ckpt_final.pt"
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(checkpoint["model"])
+        model.eval()
+        return model
 
     def forward(self, in_indices: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         seq_len = in_indices.shape[1]

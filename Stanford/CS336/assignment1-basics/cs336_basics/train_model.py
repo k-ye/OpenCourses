@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("--checkpoint-interval", type=int, default=1000)
 
     parser.add_argument("--vocab-size", type=int, default=10_000)
-    parser.add_argument("--context-len", type=int, default=256)
+    parser.add_argument("--context-length", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=64)
 
     parser.add_argument("--d-model", type=int, default=512)
@@ -112,7 +112,7 @@ def main():
 
     model = TransformerLM(
         vocab_size=args.vocab_size,
-        context_length=args.context_len,
+        context_length=args.context_length,
         d_model=args.d_model,
         num_layers=args.num_layers,
         num_heads=args.num_heads,
@@ -146,7 +146,7 @@ def main():
         for group in optimizer.param_groups:
             group["lr"] = lr
 
-        x, y = get_batch(train_data, args.batch_size, args.context_len, str(device))
+        x, y = get_batch(train_data, args.batch_size, args.context_length, str(device))
 
         optimizer.zero_grad()
         logits = model(x)
@@ -164,7 +164,7 @@ def main():
             val_losses = []
             with torch.no_grad():
                 for _ in range(args.eval_iters):
-                    x_val, y_val = get_batch(val_data, args.batch_size, args.context_len, str(device))
+                    x_val, y_val = get_batch(val_data, args.batch_size, args.context_length, str(device))
                     val_logits = model(x_val)
                     val_loss = calc_cross_entropy(val_logits, y_val)
                     val_losses.append(val_loss.item())
