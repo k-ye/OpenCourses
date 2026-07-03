@@ -2,7 +2,7 @@
 
 ### `transformer_accounting`
 
-See [`accounting_transformer.py`](cs336_basics/accounting_transformer.py)
+See [`transformer_accounting.py`](cs336_basics/transformer_accounting.py)
 
 (a)
 
@@ -74,3 +74,13 @@ context=16384
 ```
 
 Clearly, as `context_length` increases, SDPA takes a larger part of the total FLOPs.
+
+## 4.3
+
+### `adamw_accounting`
+
+See [`adamw_accounting.py`](cs336_basics/adamw_accounting.py).
+
+(a)
+
+

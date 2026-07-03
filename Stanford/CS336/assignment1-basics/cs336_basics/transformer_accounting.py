@@ -1,21 +1,12 @@
-# 3.5
-from dataclasses import dataclass
+from cs336_basics.accounting_utils import (
+    Model,
+    matmul_flops,
+    M,
+    G,
+    B,
+    T,
+)
 
-
-@dataclass
-class Model:
-    name: str
-    vocab_size: int
-    context_length: int
-    num_layers: int
-    d_model: int
-    num_heads: int
-    d_ff: int
-
-M = 1000_000
-G = 1000 * M
-B = G
-T = 1000 * G
 
 def calc_model_size(m: Model) -> int:
     token_embeddings = m.vocab_size * m.d_model
@@ -41,12 +32,10 @@ def calc_model_size(m: Model) -> int:
     total_b = total / B
     block_m = block / M
     layers_b = layers / B
-    print(f"  params: total={total_b:.2f}B layers={layers_b:.2f}B per-block={block_m:.2f}M layers%={layers / total * 100:.2f}%")
+    print(
+        f"  params: total={total_b:.2f}B layers={layers_b:.2f}B per-block={block_m:.2f}M layers%={layers / total * 100:.2f}%"
+    )
     return total
-
-
-def matmul_flops(m: int, n: int, p: int) -> int:
-    return 2 * m * n * p
 
 
 def calc_forward_flops(m: Model) -> int:
@@ -82,13 +71,19 @@ def calc_forward_flops(m: Model) -> int:
 
     print("  FLOPs:")
     print(f"    total={total_t:.2f}T (layers={layers_t:.2f}T pct={layers_flops / total_flops * 100:.2f}%)")
-    print(f"    block={block_g:.2f}G (mha={mha_g:.2f}G pct={mha_flops / block_flops * 100:.2f}% ffn={ffn_g:.2f}G pct={ffn_flops / block_flops * 100:.2f}%)")
+    print(
+        f"    block={block_g:.2f}G (mha={mha_g:.2f}G pct={mha_flops / block_flops * 100:.2f}% ffn={ffn_g:.2f}G pct={ffn_flops / block_flops * 100:.2f}%)"
+    )
     proj_pct = mha_proj_flops / mha_flops
-    print(f"    mha={mha_g:.2f}G (proj={mha_proj_g:.2f}G pct={proj_pct * 100:.2f}% sdpa={mha_sdpa_g:.2f}G pct={(1 - proj_pct) * 100:.2f}%)")
+    print(
+        f"    mha={mha_g:.2f}G (proj={mha_proj_g:.2f}G pct={proj_pct * 100:.2f}% sdpa={mha_sdpa_g:.2f}G pct={(1 - proj_pct) * 100:.2f}%)"
+    )
     return total_flops
+
 
 def calc_d_ff(d_model: int) -> int:
     return (((d_model * 8 // 3) + 63) // 64) * 64
+
 
 def main():
     gpt2_small = Model(
@@ -137,7 +132,6 @@ def main():
         calc_forward_flops(m)
     return
 
-
     gpt2_xl.context_length = 1024
     print("context=1024")
     calc_forward_flops(gpt2_xl)
@@ -146,5 +140,6 @@ def main():
     print("context=16384")
     calc_forward_flops(gpt2_xl)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
