@@ -79,8 +79,11 @@ Clearly, as `context_length` increases, SDPA takes a larger part of the total FL
 
 ### `adamw_accounting`
 
-See [`adamw_accounting.py`](cs336_basics/adamw_accounting.py).
-
 (a)
 
+See [`adamw_accounting.py`](cs336_basics/adamw_accounting.py).
+
+(b)
+
+max batch size is `3`
 
