@@ -11,6 +11,11 @@ class Model:
     num_heads: int
     d_ff: int
 
+    @property
+    def head_dim(self) -> int:
+        assert self.d_model % self.num_heads == 0
+        return self.d_model // self.num_heads
+
 
 M = 1000_000
 G = 1000 * M
