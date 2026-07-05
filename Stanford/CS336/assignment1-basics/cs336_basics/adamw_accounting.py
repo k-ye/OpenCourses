@@ -129,5 +129,35 @@ def task_b():
     print(f"Max batch size is {int(res)} ({res:.2f})")
 
 
+def task_c() -> int:
+    flops = 0
+    # theta <- theta - alpha * lambda * theta
+    # 1 mul, 1 subtract
+    flops += 2
+    # m <- beta1*m + (1-beta1)*g
+    #  beta1*m: 1 mul
+    #  (1-beta1)*g: 1 mul
+    #  1 add
+    flops += 3
+    # v <- beta2*v + (1-beta2)*g^2
+    #  beta2*v: 1 mul
+    #  g^2: 1 mul
+    #  (1-beta2)*g^2: 1 mul
+    #  1 add
+    flops += 4
+    # theta <- theta - alpha_t * m / (sqrt(v) + eps)
+    #  sqrt(v) + eps: 1 sqrt, 1 add
+    #  alpha_t * m / (sqrt(v) + eps): 1 mul, 1 div
+    # theta - ...: 1 sub
+    flops += 5
+    print(f"AdamW step: per-param FLOPs: {flops}")
+    return flops
+
+
+def task_d():
+    pass
+
+
 if __name__ == "__main__":
     task_b()
+    task_c()

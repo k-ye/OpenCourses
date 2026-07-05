@@ -87,3 +87,9 @@ See [`adamw_accounting.py`](cs336_basics/adamw_accounting.py).
 
 max batch size is `3`
 
+(c)
+
+`14` FLOPs per parameter in one AdamW step.
+
+(d)
+
