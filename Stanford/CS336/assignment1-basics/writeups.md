@@ -2,7 +2,7 @@
 
 ### `transformer_accounting`
 
-See [`accounting_transformer.py`](cs336_basics/accounting_transformer.py)
+See [`transformer_accounting.py`](cs336_basics/transformer_accounting.py)
 
 (a)
 
@@ -74,3 +74,25 @@ context=16384
 ```
 
 Clearly, as `context_length` increases, SDPA takes a larger part of the total FLOPs.
+
+## 4.3
+
+### `adamw_accounting`
+
+(a)
+
+See [`adamw_accounting.py`](cs336_basics/adamw_accounting.py).
+
+(b)
+
+max batch size is `3`
+
+(c)
+
+`14` FLOPs per parameter in one AdamW step.
+
+(d)
+
+FLOPS pct: fwd=33.33% bwd=66.67% optimizer=0.00%
+
+It takes `17460266.8` seconds (`4850.1` hours) to train.
