@@ -93,3 +93,6 @@ max batch size is `3`
 
 (d)
 
+FLOPS pct: fwd=33.26% bwd=66.52% optimizer=0.22%
+
+It takes 17088.1 seconds (4.7 hours) to train.

@@ -5,7 +5,7 @@ from cs336_basics.accounting_utils import (
     B,
     T,
 )
-from cs336_basics.transformer_accounting import calc_model_size
+from cs336_basics.transformer_accounting import calc_model_size, calc_forward_flops
 from dataclasses import dataclass
 
 """
@@ -129,7 +129,7 @@ def task_b():
     print(f"Max batch size is {int(res)} ({res:.2f})")
 
 
-def task_c() -> int:
+def adamw_step_flops() -> int:
     flops = 0
     # theta <- theta - alpha * lambda * theta
     # 1 mul, 1 subtract
@@ -150,14 +150,41 @@ def task_c() -> int:
     #  alpha_t * m / (sqrt(v) + eps): 1 mul, 1 div
     # theta - ...: 1 sub
     flops += 5
-    print(f"AdamW step: per-param FLOPs: {flops}")
     return flops
 
 
+def task_c():
+    flops = adamw_step_flops()
+    print(f"AdamW step: per-param FLOPs: {flops}")
+
+
 def task_d():
-    pass
+    m = Model(
+        name="gpt2-xl",
+        vocab_size=50_257,
+        context_length=1024,
+        num_layers=48,
+        d_model=1600,
+        num_heads=25,
+        d_ff=4288,
+    )
+    r = RunConfig(m=m, batch_size=1024)
+    num_params = calc_model_size(m)
+    fwd_flops = calc_forward_flops(m)
+    bwd_flops = 2 * fwd_flops
+    opt_flops = num_params * adamw_step_flops()
+    step_flops = fwd_flops + bwd_flops + opt_flops
+    print(
+        f"FLOPS pct: fwd={100 * fwd_flops / step_flops:.2f}% bwd={100 * bwd_flops / step_flops:.2f}% optimizer={100 * opt_flops / step_flops:.2f}%"
+    )
+    mfu = 0.5
+    steps = 400_000
+    peak_flops = 495 * T
+    duration_s = step_flops * steps / peak_flops / mfu
+    print(f"It takes {duration_s:.1f} seconds ({duration_s / 3600:.1f} hours) to train")
 
 
 if __name__ == "__main__":
-    task_b()
-    task_c()
+    # task_b()
+    # task_c()
+    task_d()
