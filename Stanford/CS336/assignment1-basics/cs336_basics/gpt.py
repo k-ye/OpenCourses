@@ -203,6 +203,8 @@ class TransformerLM(torch.nn.Module):
         rope_theta: float,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        *,
+        model_dir: str | os.PathLike | None = None,
     ):
         super().__init__()
         self.context_length = context_length
@@ -214,6 +216,20 @@ class TransformerLM(torch.nn.Module):
         )
         self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
         self.lm_head = Linear(d_model, vocab_size, device, dtype)
+
+        if model_dir:
+            m = {
+                "vocab_size": vocab_size,
+                "context_length": context_length,
+                "d_model": d_model,
+                "num_layers": num_layers,
+                "num_heads": num_heads,
+                "d_ff": d_ff,
+                "rope_theta": rope_theta,
+            }
+            model_config_path = Path(model_dir) / "model_config.json"
+            with model_config_path.open("w") as f:
+                json.dump(m, f, indent=2, sort_keys=True)
 
     @classmethod
     def from_dir(

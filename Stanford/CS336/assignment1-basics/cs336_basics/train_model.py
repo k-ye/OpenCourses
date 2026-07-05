@@ -13,6 +13,25 @@ import numpy as np
 import json
 
 
+def setup_logging(log_path: pathlib.Path):
+    formatter = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(formatter)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[console_handler, file_handler],
+        force=True,
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser("Train CS336 language model")
 
@@ -67,16 +86,13 @@ def validate_args(args):
 
 
 def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
     args = parse_args()
 
     out_dir: pathlib.Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    setup_logging(out_dir / "train.log")
+
     args_path = out_dir / "args.json"
     with args_path.open("w") as f:
         json.dump(vars(args), f, indent=2, default=str, sort_keys=True)
@@ -98,6 +114,7 @@ def main():
         rope_theta=args.rope_theta,
         device=device,
         dtype=dtype,
+        model_dir=out_dir,
     )
     optimizer = AdamW(
         params=model.parameters(),
