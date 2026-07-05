@@ -168,9 +168,9 @@ def task_d():
         num_heads=25,
         d_ff=4288,
     )
-    r = RunConfig(m=m, batch_size=1024)
+    batch_size = 1024
     num_params = calc_model_size(m)
-    fwd_flops = calc_forward_flops(m)
+    fwd_flops = calc_forward_flops(m) * batch_size
     bwd_flops = 2 * fwd_flops
     opt_flops = num_params * adamw_step_flops()
     step_flops = fwd_flops + bwd_flops + opt_flops
