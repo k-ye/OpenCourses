@@ -104,6 +104,7 @@ def main():
     device = pick_device(args.device)
     dtype = pick_dtype(device, args.dtype)
 
+    torch.set_float32_matmul_precision("high")
     model = TransformerLM(
         vocab_size=args.vocab_size,
         context_length=args.context_length,
@@ -116,6 +117,7 @@ def main():
         dtype=dtype,
         model_dir=out_dir,
     )
+    model = torch.compile(model)
     optimizer = AdamW(
         params=model.parameters(),
         lr=args.lr,
