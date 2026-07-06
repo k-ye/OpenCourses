@@ -71,6 +71,10 @@ def parse_args():
     parser.add_argument("--adamw-beta2", type=float, default=0.999)
     parser.add_argument("--adamw-eps", type=float, default=1e-8)
 
+    parser.add_argument("--use-muon", action="store_true", default=False)
+    parser.add_argument("--muon-lr", type=float, default=1e-2)
+    parser.add_argument("--muon-lr-min", type=float, default=1e-3)
+
     args = parser.parse_args()
     if args.lr_cosine_cycle_iters == -1:
         args.lr_cosine_cycle_iters = args.max_iters
@@ -83,6 +87,17 @@ def validate_args(args):
 
     if args.d_model % args.num_heads != 0:
         raise ValueError("Bad num_heads")
+
+
+def partition_opt_params_for_muon(model: torch.nn.Module) -> tuple[list[torch.nn.Parameter], list[torch.nn.Parameter]]:
+    muon_params: list[torch.nn.Parameter] = []
+    others_params: list[torch.nn.Parameter] = []
+    for name, p in model.named_parameters():
+        if p.ndim == 2:
+            muon_params.append(p)
+        else:
+            others_params.append(p)
+    return muon_params, others_params
 
 
 def main():
@@ -118,13 +133,29 @@ def main():
         model_dir=out_dir,
     )
     model = torch.compile(model)
-    optimizer = AdamW(
-        params=model.parameters(),
-        lr=args.lr,
-        weight_decay=args.adamw_weight_decay,
-        betas=(args.adamw_beta1, args.adamw_beta2),
-        eps=args.adamw_eps,
-    )
+
+    if args.use_muon:
+        muon_params, others_params = partition_opt_params_for_muon(model)
+        muon_opt = torch.optim.Muon(
+            muon_params,
+            lr=args.muon_lr,
+        )
+        adamw_opt = AdamW(
+            params=others_params,
+            lr=args.lr,
+            weight_decay=args.adamw_weight_decay,
+            betas=(args.adamw_beta1, args.adamw_beta2),
+            eps=args.adamw_eps,
+        )
+    else:
+        muon_opt = None
+        adamw_opt = AdamW(
+            params=model.parameters(),
+            lr=args.lr,
+            weight_decay=args.adamw_weight_decay,
+            betas=(args.adamw_beta1, args.adamw_beta2),
+            eps=args.adamw_eps,
+        )
 
     train_data = np.load(args.train_data, mmap_mode="r")
     val_data = np.load(args.val_data, mmap_mode="r")
@@ -140,18 +171,32 @@ def main():
             warmup_iters=args.lr_warmup_iters,
             cosine_cycle_iters=args.lr_cosine_cycle_iters,
         )
-        for group in optimizer.param_groups:
+        muon_lr = calc_lr_cosine_schedule(
+            it=it,
+            max_learning_rate=args.muon_lr,
+            min_learning_rate=args.muon_lr_min,
+            warmup_iters=args.lr_warmup_iters,
+            cosine_cycle_iters=args.lr_cosine_cycle_iters,
+        )
+        for group in adamw_opt.param_groups:
             group["lr"] = lr
+        if muon_opt:
+            for group in muon_opt.param_groups:
+                group["lr"] = muon_lr
 
         x, y = get_batch(train_data, args.batch_size, args.context_length, str(device))
 
-        optimizer.zero_grad()
+        adamw_opt.zero_grad()
+        if muon_opt:
+            muon_opt.zero_grad()
         logits = model(x)
         loss = calc_cross_entropy(logits, y)
         loss.backward()
 
         do_gradient_clipping(model.parameters(), args.grad_clipping)
-        optimizer.step()
+        adamw_opt.step()
+        if muon_opt:
+            muon_opt.step()
 
         if it % args.log_interval == 0:
             logging.info("iter=%d train_loss=%.4f learning_rate=%g", it, loss.item(), lr)
@@ -171,11 +216,11 @@ def main():
 
         if it > 0 and it % args.checkpoint_interval == 0:
             ckpt_path = out_dir / f"ckpt_iter{it}.pt"
-            save_checkpoint(model, optimizer, it, ckpt_path)
+            save_checkpoint(model, adamw_opt, it, ckpt_path, muon_optimizer=muon_opt)
             logging.info("saved checkpoint: %s", ckpt_path)
 
     final_path = out_dir / "ckpt_final.pt"
-    save_checkpoint(model, optimizer, args.max_iters, final_path)
+    save_checkpoint(model, adamw_opt, args.max_iters, final_path, muon_optimizer=muon_opt)
     logging.info("saved final checkpoint: %s", final_path)
 
 
