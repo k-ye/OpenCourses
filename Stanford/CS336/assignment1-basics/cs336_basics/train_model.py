@@ -11,6 +11,7 @@ import torch
 import random
 import numpy as np
 import json
+import regex as re
 
 
 def setup_logging(log_path: pathlib.Path):
@@ -92,8 +93,12 @@ def validate_args(args):
 def partition_opt_params_for_muon(model: torch.nn.Module) -> tuple[list[torch.nn.Parameter], list[torch.nn.Parameter]]:
     muon_params: list[torch.nn.Parameter] = []
     others_params: list[torch.nn.Parameter] = []
+    muon_pat = re.compile(r"layers\.\d+\.(attn|ffn)")
     for name, p in model.named_parameters():
-        if p.ndim == 2:
+        for_muon = muon_pat.match(name) is not None
+        # print(f"param: name={name} shape={p.shape} for_muon={for_muon}")
+        if for_muon:
+            assert p.ndim == 2
             muon_params.append(p)
         else:
             others_params.append(p)
@@ -132,7 +137,6 @@ def main():
         dtype=dtype,
         model_dir=out_dir,
     )
-    model = torch.compile(model)
 
     if args.use_muon:
         muon_params, others_params = partition_opt_params_for_muon(model)
@@ -163,6 +167,7 @@ def main():
     logging.info("Loaded training dataset, shape=%s dtype=%s", train_data.shape, train_data.dtype)
     logging.info("Loaded validation dataset, shape=%s dtype=%s", val_data.shape, val_data.dtype)
 
+    model = torch.compile(model)
     for it in range(args.max_iters):
         lr = calc_lr_cosine_schedule(
             it=it,
