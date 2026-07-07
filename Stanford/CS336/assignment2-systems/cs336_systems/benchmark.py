@@ -1,10 +1,13 @@
 import argparse
 import logging
 import torch
+import timeit
+import statistics as stats
 
 from cs336_basics.cli_utils import pick_device, pick_dtype, add_device_dtype_args
 from cs336_basics.gpt import TransformerLM
 from cs336_basics.optimizer import AdamW
+from cs336_basics.train_utils import calc_cross_entropy, do_gradient_clipping
 from cs336_basics.accounting_utils import Model
 
 
@@ -116,6 +119,10 @@ def get_random_batch(batch_size: int, ms: Model, device: torch.device) -> tuple[
     return (x, y)
 
 
+def mean_stdev(xs: list[float]) -> tuple[float, float]:
+    return stats.mean(xs), stats.stdev(xs)
+
+
 def main():
     setup_logging()
     args = parse_args()
@@ -135,10 +142,57 @@ def main():
         device=device,
         dtype=dtype,
     )
+    learning_rate = 1e-3
     adamw_opt = AdamW(
         params=model.parameters(),
-        lr=1e-3,
+        lr=learning_rate,
         weight_decay=0.01,
         betas=(0.9, 0.999),
         eps=1e-8,
     )
+
+    total_steps = args.warmup_steps + args.measure_steps
+    fwd_durations = []
+    bwd_durations = []
+    opt_durations = []
+    for it in range(total_steps):
+        for group in adamw_opt.param_groups:
+            group["lr"] = learning_rate
+
+        x, y = get_random_batch(args.batch_size, ms, device)
+        adamw_opt.zero_grad()
+
+        start_ts = timeit.default_timer()
+        logits = model(x)
+        torch.cuda.synchronize()
+        fwd_duration = timeit.default_timer() - start_ts
+        logging.info("iter=%d fwd_duration=%.3fs", it, fwd_duration)
+        loss = calc_cross_entropy(logits, y)
+
+        start_ts = timeit.default_timer()
+        loss.backward()
+        torch.cuda.synchronize()
+        bwd_duration = timeit.default_timer() - start_ts
+        logging.info("iter=%d bwd_duration=%.3fs", it, bwd_duration)
+
+        do_gradient_clipping(model.parameters(), 1.0)
+        start_ts = timeit.default_timer()
+        adamw_opt.step()
+        torch.cuda.synchronize()
+        opt_duration = timeit.default_timer() - start_ts
+        logging.info("iter=%d opt_duration=%.3fs", it, opt_duration)
+
+        if it >= args.warmup_steps:
+            fwd_durations.append(fwd_duration)
+            bwd_durations.append(bwd_duration)
+            opt_durations.append(opt_duration)
+
+    fwd_mean, fwd_std = mean_stdev(fwd_durations)
+    bwd_mean, bwd_std = mean_stdev(bwd_durations)
+    opt_mean, opt_std = mean_stdev(opt_durations)
+    print(f"Benchmark with model_size={ms.name}")
+    print(f"Average duration: forward={fwd_mean:.3f}s ± {fwd_std:.3f}s backward={bwd_mean:.3f}s ± {bwd_std:.3f}s optimizer={opt_mean:.3f}s ± {opt_std:.3f}s")
+
+
+if __name__ == "__main__":
+    main()
