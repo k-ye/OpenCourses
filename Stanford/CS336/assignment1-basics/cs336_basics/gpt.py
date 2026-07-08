@@ -1,6 +1,7 @@
 import math
 
 import torch
+import torch.cuda.nvtx as nvtx
 from einops import rearrange
 import os
 import json
@@ -112,16 +113,20 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     return exp / denom
 
 
+@nvtx.range("scaled dot product attention")
 def scaled_dot_product_attention(
     Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor | None = None
 ) -> torch.Tensor:
     d_k = K.shape[-1]
     # Q @ K.transpose(-2, -1)
-    scores = Q @ rearrange(K, "... s d -> ... d s") / math.sqrt(d_k)
+    with nvtx.range("computing attention scores"):
+        scores = Q @ rearrange(K, "... s d -> ... d s") / math.sqrt(d_k)
     if mask is not None:
         scores = scores.masked_fill(~mask, -torch.inf)
-    attn = softmax(scores, dim=-1)
-    return attn @ V
+    with nvtx.range("computing softmax"):
+        attn = softmax(scores, dim=-1)
+    with nvtx.range("computing final matmul"):
+        return attn @ V
 
 
 class MultiheadSelfAttention(torch.nn.Module):
@@ -147,25 +152,31 @@ class MultiheadSelfAttention(torch.nn.Module):
         if rope is not None:
             assert self.head_dim == rope.d_k
 
+    @nvtx.range("mha")
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         # x: (batch seq_len d_model)
         seq_len = x.shape[1]
-        q: torch.Tensor = self.q_proj(x)
         pat = "... s (h d) -> ... h s d"
-        q = rearrange(q, pat, h=self.num_heads)
-        k: torch.Tensor = self.k_proj(x)
-        k = rearrange(k, pat, h=self.num_heads)
-        v: torch.Tensor = self.v_proj(x)
-        v = rearrange(v, pat, h=self.num_heads)
+        with nvtx.range("computing q proj"):
+            q: torch.Tensor = self.q_proj(x)
+            q = rearrange(q, pat, h=self.num_heads)
+        with nvtx.range("computing k proj"):
+            k: torch.Tensor = self.k_proj(x)
+            k = rearrange(k, pat, h=self.num_heads)
+        with nvtx.range("computing v proj"):
+            v: torch.Tensor = self.v_proj(x)
+            v = rearrange(v, pat, h=self.num_heads)
         if self.rope is not None:
             assert token_positions is not None
-            q = self.rope.forward(q, token_positions)
-            k = self.rope.forward(k, token_positions)
+            with nvtx.range("computing RoPE"):
+                q = self.rope.forward(q, token_positions)
+                k = self.rope.forward(k, token_positions)
         causal_mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool))
         out = scaled_dot_product_attention(q, k, v, causal_mask)
         out = rearrange(out, "... h s d -> ... s (h d)")
-        out = self.output_proj(out)
-        return out
+        with nvtx.range("computing out proj"):
+            out = self.output_proj(out)
+            return out
 
 
 class TransformerBlock(torch.nn.Module):
@@ -185,9 +196,11 @@ class TransformerBlock(torch.nn.Module):
         self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
-        a1 = self.attn.forward(self.ln1.forward(x), token_positions)
+        with nvtx.range("transformer attn"):
+            a1 = self.attn(self.ln1(x), token_positions)
         a1 = x + a1
-        a2 = self.ffn.forward(self.ln2.forward(a1))
+        with nvtx.range("transformer ffn"):
+            a2 = self.ffn(self.ln2(a1))
         return a1 + a2
 
 
@@ -268,9 +281,9 @@ class TransformerLM(torch.nn.Module):
         if token_positions is None:
             token_positions = torch.arange(seq_len, device=in_indices.device)
 
-        x = self.token_embeddings.forward(in_indices)
+        x = self.token_embeddings(in_indices)
         for layer in self.layers:
             layer: TransformerBlock
-            x = layer.forward(x, token_positions)
-        x = self.ln_final.forward(x)
-        return self.lm_head.forward(x)
+            x = layer(x, token_positions)
+        x = self.ln_final(x)
+        return self.lm_head(x)
