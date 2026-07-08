@@ -4,6 +4,7 @@ import torch
 import timeit
 import statistics as stats
 from collections import OrderedDict
+import torch.cuda.nvtx as nvtx
 
 from cs336_basics.cli_utils import pick_device, pick_dtype, add_device_dtype_args
 from cs336_basics.gpt import TransformerLM
@@ -172,7 +173,8 @@ def main():
         adamw_opt.zero_grad()
 
         start_ts = timeit.default_timer()
-        logits = model(x)
+        with nvtx.range("forward"):
+            logits = model(x)
         torch.cuda.synchronize()
         fwd_duration = timeit.default_timer() - start_ts
         stats[FWD] = fwd_duration
@@ -182,7 +184,8 @@ def main():
 
         loss = calc_cross_entropy(logits, y)
         start_ts = timeit.default_timer()
-        loss.backward()
+        with nvtx.range("backward"):
+            loss.backward()
         torch.cuda.synchronize()
         bwd_duration = timeit.default_timer() - start_ts
         stats[BWD] = bwd_duration
@@ -192,7 +195,8 @@ def main():
 
         do_gradient_clipping(model.parameters(), 1.0)
         start_ts = timeit.default_timer()
-        adamw_opt.step()
+        with nvtx.range("optimizer"):
+            adamw_opt.step()
         torch.cuda.synchronize()
         opt_duration = timeit.default_timer() - start_ts
         stats[OPT] = opt_duration
