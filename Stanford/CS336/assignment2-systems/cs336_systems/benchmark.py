@@ -3,6 +3,7 @@ import logging
 import torch
 import timeit
 import statistics as stats
+from collections import OrderedDict
 
 from cs336_basics.cli_utils import pick_device, pick_dtype, add_device_dtype_args
 from cs336_basics.gpt import TransformerLM
@@ -155,43 +156,74 @@ def main():
     fwd_durations = []
     bwd_durations = []
     opt_durations = []
-    for it in range(total_steps):
+
+    FWD = "fwd"
+    BWD = "bwd"
+    OPT = "opt"
+
+    should_run_bwd = args.mode != "fwd"
+    should_run_opt = args.mode == "full"
+
+    def run_iter(x: torch.Tensor, y: torch.Tensor) -> OrderedDict:
         for group in adamw_opt.param_groups:
             group["lr"] = learning_rate
 
-        x, y = get_random_batch(args.batch_size, ms, device)
+        stats = OrderedDict()
         adamw_opt.zero_grad()
 
         start_ts = timeit.default_timer()
         logits = model(x)
         torch.cuda.synchronize()
         fwd_duration = timeit.default_timer() - start_ts
-        logging.info("iter=%d fwd_duration=%.3fs", it, fwd_duration)
-        loss = calc_cross_entropy(logits, y)
+        stats[FWD] = fwd_duration
 
+        if not should_run_bwd:
+            return stats
+
+        loss = calc_cross_entropy(logits, y)
         start_ts = timeit.default_timer()
         loss.backward()
         torch.cuda.synchronize()
         bwd_duration = timeit.default_timer() - start_ts
-        logging.info("iter=%d bwd_duration=%.3fs", it, bwd_duration)
+        stats[BWD] = bwd_duration
+
+        if not should_run_opt:
+            return stats
 
         do_gradient_clipping(model.parameters(), 1.0)
         start_ts = timeit.default_timer()
         adamw_opt.step()
         torch.cuda.synchronize()
         opt_duration = timeit.default_timer() - start_ts
-        logging.info("iter=%d opt_duration=%.3fs", it, opt_duration)
+        stats[OPT] = opt_duration
+
+        return stats
+
+    for it in range(total_steps):
+        x, y = get_random_batch(args.batch_size, ms, device)
+        stats = run_iter(x, y)
+
+        line = [f"iter={it}:"] + [f"{k}={v:.3f}s" for k, v in stats.items()]
+        line = " ".join(line)
+        logging.info(line)
 
         if it >= args.warmup_steps:
-            fwd_durations.append(fwd_duration)
-            bwd_durations.append(bwd_duration)
-            opt_durations.append(opt_duration)
+            fwd_durations.append(stats[FWD])
+            if BWD in stats:
+                bwd_durations.append(stats[BWD])
+            if OPT in stats:
+                opt_durations.append(stats[OPT])
 
-    fwd_mean, fwd_std = mean_stdev(fwd_durations)
-    bwd_mean, bwd_std = mean_stdev(bwd_durations)
-    opt_mean, opt_std = mean_stdev(opt_durations)
-    print(f"Benchmark with model_size={ms.name}")
-    print(f"Average duration: forward={fwd_mean:.3f}s ± {fwd_std:.3f}s backward={bwd_mean:.3f}s ± {bwd_std:.3f}s optimizer={opt_mean:.3f}s ± {opt_std:.3f}s")
+    phase_durations = OrderedDict()
+    phase_durations[FWD] = fwd_durations
+    if should_run_bwd:
+        phase_durations[BWD] = bwd_durations
+    if should_run_opt:
+        phase_durations[OPT] = opt_durations
+    print(f"Benchmark with model_size={ms.name} mode={args.mode}")
+    for phase, durations in phase_durations.items():
+        mean, std = mean_stdev(durations)
+        print(f"{phase}: {mean:.3f}s ± {std:.3f}s")
 
 
 if __name__ == "__main__":
