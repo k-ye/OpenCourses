@@ -205,13 +205,16 @@ def main():
 
     for it in range(total_steps):
         x, y = get_random_batch(args.batch_size, ms, device)
-        stats = run_iter(x, y)
+        is_measure = it >= args.warmup_steps
+        label = "measure" if is_measure else "warmup"
+        with nvtx.range(label):
+            stats = run_iter(x, y)
 
         line = [f"iter={it}:"] + [f"{k}={v:.3f}s" for k, v in stats.items()]
         line = " ".join(line)
         logging.info(line)
 
-        if it >= args.warmup_steps:
+        if is_measure:
             fwd_durations.append(stats[FWD])
             if BWD in stats:
                 bwd_durations.append(stats[BWD])
