@@ -19,6 +19,7 @@ class FlashAttentionFunc(torch.autograd.Function):
         # K, V: ... N d
         N_q, N_k = Q.shape[-2], K.shape[-2]
         head_dim = Q.shape[-1]
+        shapes_before_seq = Q.shape[:-2]
         B_q = FlashAttentionFunc.Q_TILE_SIZE
         B_k = FlashAttentionFunc.K_TILE_SIZE
         assert N_q % B_q == 0
@@ -26,13 +27,16 @@ class FlashAttentionFunc(torch.autograd.Function):
         T_q = N_q // B_q
         T_k = N_k // B_k
         d_sqrt = math.sqrt(head_dim)
+
+        O_out = torch.empty((*shapes_before_seq, N_q, head_dim), dtype=Q.dtype, device=Q.device)
+        L_out = torch.empty((*shapes_before_seq, N_q), dtype=torch.float32, device=Q.device)
         for i in range(T_q):
             Q_i = Q[..., i * B_q : (i + 1) * B_q, :]
             # *Q.shape[:-2] to make sure the batch dims are in
             # O_i: ... B_q d
-            O_i = torch.zeros((*Q.shape[:-2], B_q, head_dim), dtype=torch.float32, device=Q.device)
-            l_i = torch.zeros((*Q.shape[:-2], B_q), dtype=torch.float32, device=Q.device)
-            m_i = torch.full((*Q.shape[:-2], B_q), -torch.inf, dtype=torch.float32, device=Q.device)
+            O_i = torch.zeros((*shapes_before_seq, B_q, head_dim), dtype=torch.float32, device=Q.device)
+            l_i = torch.zeros((*shapes_before_seq, B_q), dtype=torch.float32, device=Q.device)
+            m_i = torch.full((*shapes_before_seq, B_q), -torch.inf, dtype=torch.float32, device=Q.device)
             for j in range(T_k):
                 # ... B_k d
                 K_j = K[..., j * B_k : (j + 1) * B_k, :]
@@ -47,4 +51,20 @@ class FlashAttentionFunc(torch.autograd.Function):
                 alpha = torch.exp(m_i - m_i_new)
                 l_i_new = alpha * l_i + torch.sum(P_i_tilde, dim=-1, keepdim=False)
                 # O_i_new: ... B_q d
+                # NOTE: diag(v) @ M = unsqueeze_last(v) * M
                 O_i_new = unsqueeze_last(alpha) * O_i + P_i_tilde @ V_j
+
+                O_i = O_i_new
+                l_i = l_i_new
+                m_i = m_i_new
+            O_i = (1.0 / unsqueeze_last(l_i)) * O_i
+            L_i = m_i + torch.log(l_i)
+            O_out[..., i * B_q : (i + 1) * B_q, :] = O_i
+            L_out[..., i * B_q : (i + 1) * B_q] = L_i
+        ctx.save_for_backward(Q, K, V, O_out, L_out)
+        ctx.is_causal = is_causal
+        return O_out
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError
