@@ -2,6 +2,8 @@ import torch
 from torch.autograd.function import FunctionCtx
 import math
 from einops import rearrange
+import triton
+import triton.language as tl
 
 
 def unsqueeze_last(x: torch.Tensor) -> torch.Tensor:
@@ -68,3 +70,70 @@ class FlashAttentionFunc(torch.autograd.Function):
     @staticmethod
     def backward(ctx, *grad_outputs):
         raise NotImplementedError
+
+
+@triton.jit
+def flash_fwd_kernel(
+    Q_ptr,
+    K_ptr,
+    V_ptr,
+    O_ptr,
+    L_ptr,
+    # Q
+    stride_qb,
+    stride_qq,
+    stride_qd,
+    # K
+    stride_kb,
+    stride_kk,
+    stride_kd,
+    # V
+    stride_vb,
+    stride_vk,
+    stride_vd,
+    # O_out
+    stride_ob,
+    stride_oq,
+    stride_od,
+    # L_out
+    stride_lb,
+    stride_lq,
+    N_QUERIES,
+    N_KEYS,
+    scale,
+    D: tl.constexpr,
+    Q_TILE_SIZE: tl.constexpr,
+    K_TILE_SIZE: tl.constexpr,
+):
+    query_tile_index = tl.program_id(0)
+    batch_index = tl.program_id(1)
+
+    Q_block_ptr = tl.make_block_ptr(
+        Q_ptr + batch_index * stride_qb,
+        shape=(N_QUERIES, D),
+        strides=(stride_qq, stride_qd),
+        offsets=(query_tile_index * Q_TILE_SIZE, 0),
+        block_shape=(Q_TILE_SIZE, D),
+        order=(1, 0),
+    )
+    K_block_ptr = tl.make_block_ptr(
+        K_ptr + batch_index * stride_kb,
+        shape=(N_KEYS, D),
+        strides=(stride_kk, stride_kd),
+        offsets=(0, 0),
+        block_shape=(K_TILE_SIZE, D),
+        order=(1, 0),
+    )
+    V_block_ptr = tl.make_block_ptr(
+        V_ptr + batch_index * stride_vb,
+        shape=(N_KEYS, D),
+        strides=(stride_vk, stride_vd),
+        offsets=(0, 0),
+        block_shape=(K_TILE_SIZE, D),
+        order=(1, 0),
+    )
+
+
+class FlashAttentionTritonFunc(torch.autograd.Function):
+    Q_TILE_SIZE = 16
+    K_TILE_SIZE = 16
