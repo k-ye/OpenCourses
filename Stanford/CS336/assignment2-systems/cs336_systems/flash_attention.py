@@ -149,6 +149,36 @@ def flash_fwd_kernel(
         order=(0,),
     )
 
+    O_i = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
+    l_i = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
+    m_i = tl.full((Q_TILE_SIZE,), -math.inf, dtype=tl.float32)
+
+    Q_i = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
+        K_j = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
+
+        S_ij = tl.dot(Q_i, tl.trans(K_j)) * scale
+        m_i_new = tl.maximum(m_i, tl.max(S_ij, axis=-1))
+        P_i_tilde = tl.exp(S_ij - m_i_new[:, None])
+        alpha = tl.exp(m_i - m_i_new)
+        l_i_new = alpha * l_i + tl.sum(P_i_tilde, axis=-1)
+
+        V_j = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
+        O_i_new = alpha[:, None] * O_i + tl.dot(P_i_tilde, V_j)
+
+        O_i = O_i_new
+        l_i = l_i_new
+        m_i = m_i_new
+
+        K_block_ptr = tl.advance(K_block_ptr, (K_TILE_SIZE, 0))
+        V_block_ptr = tl.advance(V_block_ptr, (K_TILE_SIZE, 0))
+
+    O_i = (1.0 / l_i[:, None]) * O_i
+    L_i = m_i + tl.log(l_i)
+
+    tl.store(O_block_ptr, O_i, boundary_check=(0, 1))
+    tl.store(L_block_ptr, L_i, boundary_check=(0,))
+
 
 class FlashAttentionTritonFunc(torch.autograd.Function):
     Q_TILE_SIZE = 16
