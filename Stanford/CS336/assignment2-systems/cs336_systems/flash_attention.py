@@ -19,7 +19,11 @@ class FlashAttentionFunc(torch.autograd.Function):
         for i in range(T_q):
             Q_i = Q[..., i * TILE_SIZE : (i + 1) * TILE_SIZE, :]
             # *Q.shape[:-2] to make sure the batch dims are in
-            O_i = torch.zeros((*Q.shape[:-2], TILE_SIZE, head_dim), dtype=torch.float32, device=Q.device)
+            O_i = torch.zeros(
+                (*Q.shape[:-2], TILE_SIZE, head_dim),
+                dtype=torch.float32,
+                device=Q.device,
+            )
             l_i = torch.zeros(
                 (
                     *Q.shape[:-2],
