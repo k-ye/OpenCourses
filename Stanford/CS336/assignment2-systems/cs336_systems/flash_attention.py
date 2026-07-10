@@ -1,5 +1,7 @@
 import torch
 from torch.autograd.function import FunctionCtx
+import math
+from einops import rearrange
 
 
 class FlashAttentionFunc(torch.autograd.Function):
@@ -18,6 +20,7 @@ class FlashAttentionFunc(torch.autograd.Function):
         assert N_k % B_k == 0
         T_q = N_q // B_q
         T_k = N_k // B_k
+        d_sqrt = math.sqrt(head_dim)
         for i in range(T_q):
             Q_i = Q[..., i * B_q : (i + 1) * B_q, :]
             # *Q.shape[:-2] to make sure the batch dims are in
@@ -27,3 +30,8 @@ class FlashAttentionFunc(torch.autograd.Function):
             for j in range(T_k):
                 K_j = K[..., j * B_k : (j + 1) * B_k, :]
                 V_j = V[..., j * B_k : (j + 1) * B_k, :]
+                # S_ij: ... B_q B_k
+                S_ij = Q_i @ rearrange(K_j, "... t d -> ... d t") / d_sqrt
+                # m_i_new: ... B_q
+                m_i_new = torch.max(m_i, torch.amax(S_ij, dim=-1, keepdim=False))
+                P_i_tilde = torch.exp(S_ij - rearrange(m_i_new, "... t -> ... t 1"))
