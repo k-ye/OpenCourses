@@ -164,7 +164,7 @@ def flash_fwd_kernel(
         l_i_new = alpha * l_i + tl.sum(P_i_tilde, axis=-1)
 
         V_j = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
-        O_i_new = alpha[:, None] * O_i + tl.dot(P_i_tilde, V_j)
+        O_i_new = alpha[:, None] * O_i + tl.dot(P_i_tilde.to(V_block_ptr.type.element_ty), V_j)
 
         O_i = O_i_new
         l_i = l_i_new
@@ -176,10 +176,14 @@ def flash_fwd_kernel(
     O_i = (1.0 / l_i[:, None]) * O_i
     L_i = m_i + tl.log(l_i)
 
-    tl.store(O_block_ptr, O_i, boundary_check=(0, 1))
+    tl.store(O_block_ptr, O_i.to(O_block_ptr.type.element_ty), boundary_check=(0, 1))
     tl.store(L_block_ptr, L_i, boundary_check=(0,))
 
 
 class FlashAttentionTritonFunc(torch.autograd.Function):
     Q_TILE_SIZE = 16
     K_TILE_SIZE = 16
+
+    @staticmethod
+    def forward(ctx: FunctionCtx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_causal: bool):
+        pass
