@@ -202,12 +202,17 @@ class FlashAttentionTritonFunc(torch.autograd.Function):
 
         O_out = torch.empty((*shapes_before_seq, N_q, D), dtype=Q.dtype, device=Q.device)
         L_out = torch.empty((*shapes_before_seq, N_q), dtype=torch.float32, device=Q.device)
-        # TODO: try einops
-        Q_3D = Q.reshape(-1, N_q, D)
-        K_3D = K.reshape(-1, N_k, D)
-        V_3D = V.reshape(-1, N_k, D)
-        O_out_3D = O_out.reshape(-1, N_q, D)
-        L_out_3D = L_out.reshape(-1, N_q)
+        # Q_3D = Q.reshape(-1, N_q, D)
+        # K_3D = K.reshape(-1, N_k, D)
+        # V_3D = V.reshape(-1, N_k, D)
+        # O_out_3D = O_out.reshape(-1, N_q, D)
+        # L_out_3D = L_out.reshape(-1, N_q)
+        reshape_2d_pat = "... S D -> (...) S D"
+        Q_3D = rearrange(Q, reshape_2d_pat)
+        K_3D = rearrange(K, reshape_2d_pat)
+        V_3D = rearrange(V, reshape_2d_pat)
+        O_out_3D = rearrange(O_out, reshape_2d_pat)
+        L_out_3D = rearrange(L_out, "... N -> (...) N")
 
         batch_size = Q_3D.shape[0]
         assert K_3D.shape[0] == batch_size
