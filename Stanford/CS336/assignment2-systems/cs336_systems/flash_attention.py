@@ -186,4 +186,61 @@ class FlashAttentionTritonFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx: FunctionCtx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_causal: bool):
-        pass
+        N_q = Q.shape[-2]
+        N_k = K.shape[-2]
+        D = Q.shape[-1]
+        assert K.shape[-1] == D
+        assert V.shape[-1] == D
+        assert V.shape[-2] == N_k
+        shapes_before_seq = Q.shape[:-2]
+
+        O_out = torch.empty((*shapes_before_seq, N_q, D), dtype=Q.dtype, device=Q.device)
+        L_out = torch.empty((*shapes_before_seq, N_q), dtype=torch.float32, device=Q.device)
+        # TODO: try einops
+        Q_3D = Q.reshape(-1, N_q, D)
+        K_3D = K.reshape(-1, N_k, D)
+        V_3D = V.reshape(-1, N_k, D)
+        O_out_3D = O_out.reshape(-1, N_q, D)
+        L_out_3D = L_out.reshape(-1, N_q)
+
+        batch_size = Q_3D.shape[0]
+        assert K_3D.shape[0] == batch_size
+        assert V_3D.shape[0] == batch_size
+
+        ctx.Q_TILE_SIZE = FlashAttentionTritonFunc.Q_TILE_SIZE
+        ctx.K_TILE_SIZE = FlashAttentionTritonFunc.K_TILE_SIZE
+
+        assert D == triton.next_power_of_2(D)
+        assert ctx.Q_TILE_SIZE == triton.next_power_of_2(ctx.Q_TILE_SIZE)
+        assert ctx.K_TILE_SIZE == triton.next_power_of_2(ctx.K_TILE_SIZE)
+        flash_fwd_kernel[(triton.cdiv(N_q, ctx.Q_TILE_SIZE), batch_size)](
+            Q_3D,
+            K_3D,
+            V_3D,
+            O_out_3D,
+            L_out_3D,
+            Q_3D.stride(0),
+            Q_3D.stride(1),
+            Q_3D.stride(2),
+            K_3D.stride(0),
+            K_3D.stride(1),
+            K_3D.stride(2),
+            V_3D.stride(0),
+            V_3D.stride(1),
+            V_3D.stride(2),
+            O_out_3D.stride(0),
+            O_out_3D.stride(1),
+            O_out_3D.stride(2),
+            L_out_3D.stride(0),
+            L_out_3D.stride(1),
+            N_q,
+            N_k,
+            1.0 / math.sqrt(D),
+            D,
+            ctx.Q_TILE_SIZE,
+            ctx.K_TILE_SIZE,
+        )
+
+        ctx.save_for_backward(Q, K, V, O_out, L_out)
+        ctx.is_causal = is_causal
+        return O_out
