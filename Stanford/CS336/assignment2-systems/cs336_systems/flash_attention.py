@@ -11,6 +11,33 @@ def unsqueeze_last(x: torch.Tensor) -> torch.Tensor:
     return rearrange(x, "... -> ... 1")
 
 
+def flash_backward_torch(
+    Q: torch.Tensor,
+    K: torch.Tensor,
+    V: torch.Tensor,
+    O: torch.Tensor,
+    L: torch.Tensor,
+    dO: torch.Tensor,
+    is_causal: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    head_dim = Q.shape[-1]
+    scale = 1.0 / math.sqrt(head_dim)
+    S = Q @ rearrange(K, "... S d -> ... d S") * scale
+    P = torch.exp(S - unsqueeze_last(L))
+    # TODO: is_causal
+    pat_T = "... S d -> ... d S"
+    dV = rearrange(P, pat_T) @ dO
+    dP = dO @ rearrange(V, pat_T)
+    D = torch.sum(O * dO, dim=-1, keepdim=True)
+    dS = P * (dP - D)
+    dQ = dS @ K * scale
+    dK = rearrange(dS, pat_T) @ Q * scale
+    return dQ, dK, dV
+
+
+flash_backward_compiled = torch.compile(flash_backward_torch)
+
+
 class FlashAttentionFunc(torch.autograd.Function):
     Q_TILE_SIZE = 16
     K_TILE_SIZE = 16
@@ -28,7 +55,7 @@ class FlashAttentionFunc(torch.autograd.Function):
         assert N_k % B_k == 0
         T_q = N_q // B_q
         T_k = N_k // B_k
-        d_sqrt = math.sqrt(head_dim)
+        scale = 1.0 / math.sqrt(head_dim)
 
         O_out = torch.empty((*shapes_before_seq, N_q, head_dim), dtype=Q.dtype, device=Q.device)
         L_out = torch.empty((*shapes_before_seq, N_q), dtype=torch.float32, device=Q.device)
@@ -44,7 +71,7 @@ class FlashAttentionFunc(torch.autograd.Function):
                 K_j = K[..., j * B_k : (j + 1) * B_k, :]
                 V_j = V[..., j * B_k : (j + 1) * B_k, :]
                 # S_ij: ... B_q B_k
-                S_ij = Q_i @ rearrange(K_j, "... t d -> ... d t") / d_sqrt
+                S_ij = Q_i @ rearrange(K_j, "... t d -> ... d t") * scale
                 # m_i_new: ... B_q
                 m_i_new = torch.max(m_i, torch.amax(S_ij, dim=-1, keepdim=False))
                 # P_i_tilde: ... B_q B_k
@@ -68,8 +95,10 @@ class FlashAttentionFunc(torch.autograd.Function):
         return O_out
 
     @staticmethod
-    def backward(ctx, *grad_outputs):
-        raise NotImplementedError
+    def backward(ctx, dO: torch.Tensor):
+        Q, K, V, O, L = ctx.saved_tensors
+        dQ, dK, dV = flash_backward_compiled(Q, K, V, O, L, dO, ctx.is_causal)
+        return dQ, dK, dV, None
 
 
 @triton.jit
@@ -258,5 +287,7 @@ class FlashAttentionTritonFunc(torch.autograd.Function):
         return O_out
 
     @staticmethod
-    def backward(ctx, *grad_outputs):
-        raise NotImplementedError
+    def backward(ctx, dO: torch.Tensor):
+        Q, K, V, O, L = ctx.saved_tensors
+        dQ, dK, dV = flash_backward_compiled(Q, K, V, O, L, dO, ctx.is_causal)
+        return dQ, dK, dV, None
