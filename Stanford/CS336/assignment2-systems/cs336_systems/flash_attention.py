@@ -23,8 +23,14 @@ def flash_backward_torch(
     head_dim = Q.shape[-1]
     scale = 1.0 / math.sqrt(head_dim)
     S = Q @ rearrange(K, "... S d -> ... d S") * scale
+    N_q = Q.shape[-2]
+    N_k = K.shape[-2]
+    if is_causal:
+        q_pos = torch.arange(0, N_q, device=Q.device)
+        k_pos = torch.arange(0, N_k, device=K.device)
+        mask = q_pos[:, None] >= k_pos[None, :]
+        S = torch.where(mask, S, -torch.inf)
     P = torch.exp(S - unsqueeze_last(L))
-    # TODO: is_causal
     pat_T = "... S d -> ... d S"
     dV = rearrange(P, pat_T) @ dO
     dP = dO @ rearrange(V, pat_T)
@@ -59,6 +65,7 @@ class FlashAttentionFunc(torch.autograd.Function):
 
         O_out = torch.empty((*shapes_before_seq, N_q, head_dim), dtype=Q.dtype, device=Q.device)
         L_out = torch.empty((*shapes_before_seq, N_q), dtype=torch.float32, device=Q.device)
+
         for i in range(T_q):
             Q_i = Q[..., i * B_q : (i + 1) * B_q, :]
             # *Q.shape[:-2] to make sure the batch dims are in
@@ -66,12 +73,18 @@ class FlashAttentionFunc(torch.autograd.Function):
             O_i = torch.zeros((*shapes_before_seq, B_q, head_dim), dtype=torch.float32, device=Q.device)
             l_i = torch.zeros((*shapes_before_seq, B_q), dtype=torch.float32, device=Q.device)
             m_i = torch.full((*shapes_before_seq, B_q), -torch.inf, dtype=torch.float32, device=Q.device)
+
+            q_pos = torch.arange(i * B_q, (i + 1) * B_q, device=Q.device)
             for j in range(T_k):
                 # ... B_k d
                 K_j = K[..., j * B_k : (j + 1) * B_k, :]
                 V_j = V[..., j * B_k : (j + 1) * B_k, :]
                 # S_ij: ... B_q B_k
                 S_ij = Q_i @ rearrange(K_j, "... t d -> ... d t") * scale
+                if is_causal:
+                    k_pos = torch.arange(j * B_k, (j + 1) * B_k, device=K.device)
+                    mask = q_pos[:, None] >= k_pos[None, :]
+                    S_ij = torch.where(mask, S_ij, -torch.inf)
                 # m_i_new: ... B_q
                 m_i_new = torch.max(m_i, torch.amax(S_ij, dim=-1, keepdim=False))
                 # P_i_tilde: ... B_q B_k
