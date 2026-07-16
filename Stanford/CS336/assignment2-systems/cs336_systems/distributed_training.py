@@ -1,7 +1,7 @@
 import torch
 import torch.distributed as dist
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
-from typing import Literal
+from typing import Literal, Type, Any
 
 
 class DDPContainer(torch.nn.Module):
@@ -51,3 +51,38 @@ class DDPContainer(torch.nn.Module):
         for h in self.handles:
             h.wait()
         self.handles.clear()
+
+
+class ShardedOptimizer(torch.optim.Optimizer):
+    def __init__(self, params, optimizer_cls: Type[torch.optim.Optimizer], **kwargs: Any):
+        self._opt_cls = optimizer_cls
+        self._kwargs = kwargs
+        self._opt = None
+        # sharding
+        self._param_count = 0
+        self._rank = dist.get_rank()
+        self._world_size = dist.get_world_size()
+        super().__init__(params, kwargs)
+
+    def add_param_group(self, param_group):
+        super().add_param_group(param_group)
+        params = []
+        for param in param_group["params"]:
+            if (self._param_count % self._world_size) == self._rank:
+                params.append(param)
+            self._param_count += 1
+
+        if not params:
+            return
+
+        param_group_shard = {k: v for k, v in param_group.items()}
+        param_group_shard["params"] = params
+        if self._opt is None:
+            self._opt = self._opt_cls(
+                [
+                    param_group_shard,
+                ],
+                **self._kwargs,
+            )
+        else:
+            self._opt.add_param_group(param_group_shard)
