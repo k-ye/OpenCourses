@@ -62,27 +62,32 @@ class ShardedOptimizer(torch.optim.Optimizer):
         self._param_count = 0
         self._rank = dist.get_rank()
         self._world_size = dist.get_world_size()
+        self._param_to_ranks = {}
         super().__init__(params, kwargs)
+
+    def step(self, closure=None):
+        self._opt.step(closure)
+        for pg in self.param_groups:
+            for param in pg["params"]:
+                owner_rank = self._param_to_ranks[param]
+                dist.broadcast(param.data, src=owner_rank)
 
     def add_param_group(self, param_group):
         super().add_param_group(param_group)
         params = []
         for param in param_group["params"]:
-            if (self._param_count % self._world_size) == self._rank:
+            assigned_rank = self._param_count % self._world_size
+            if self._rank == assigned_rank:
                 params.append(param)
+            self._param_to_ranks[param] = assigned_rank
             self._param_count += 1
 
         if not params:
             return
 
-        param_group_shard = {k: v for k, v in param_group.items()}
+        param_group_shard = param_group.copy()
         param_group_shard["params"] = params
         if self._opt is None:
-            self._opt = self._opt_cls(
-                [
-                    param_group_shard,
-                ],
-                **self._kwargs,
-            )
+            self._opt = self._opt_cls([param_group_shard], **self._kwargs)
         else:
             self._opt.add_param_group(param_group_shard)
