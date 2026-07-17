@@ -14,7 +14,7 @@ dependencies = [
     "pytest-timeout",
     "regex>=2026.3.32", # more powerful regex than the builtin `re` module
     "tiktoken>=0.12.0",
-    "torch~=2.11.0",
+    "torch~=2.13.0",
     "tqdm>=4.67",
     "wandb>=0.25",
     "ty>=0.0.26",
