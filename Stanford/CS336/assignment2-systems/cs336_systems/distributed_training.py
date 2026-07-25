@@ -126,7 +126,7 @@ class FSDP(torch.nn.Module):
                 #     flat = torch.cat([flat, flat.new_zeros(pad)])
                 # shard_size = flat.numel() // world_size
                 # shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
-                shard = self._shard_tensor(p, world_size)
+                shard, _ = self._shard_tensor(p, world_size)
                 shard = torch.nn.Parameter(shard)
                 setattr(m, name, shard)
 
@@ -146,7 +146,7 @@ class FSDP(torch.nn.Module):
         shard_size = flat.numel() // world_size
         rank = self._rank
         shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
-        return shard
+        return shard, flat
 
     def forward(self, *inputs, **kwargs):
         return self.module(*inputs, **kwargs)
@@ -155,13 +155,12 @@ class FSDP(torch.nn.Module):
         world_size = dist.get_world_size()
         for m in self.module.modules():
             if should_shard_module(m):
-                for name, p in m.named_parameters(recurse=False):
+                for name, p in self._full[m].items():
                     if p.grad is None:
                         continue
 
-                    shape = p.grad.shape
-                    grad_shard = self._shard_tensor(p.grad, world_size)
-                    dist.reduce_scatter(grad_shard, [p.grad], op=dist.ReduceOp.AVG, async_op=False)
+                    grad_shard, grad_flat = self._shard_tensor(p.grad.to(torch.float32), world_size)
+                    dist.reduce_scatter_tensor(grad_shard, grad_flat, op=dist.ReduceOp.AVG, async_op=False)
                     self._params_shard[m][name].grad = grad_shard
             else:
                 for p in m.parameters(recurse=False):
