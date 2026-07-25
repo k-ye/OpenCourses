@@ -11,7 +11,7 @@ dependencies = [
     "numpy",
     "pytest>=8",
     "regex>=2026.3.32",
-    "torch~=2.11.0",
+    "torch~=2.13.0",
     "tqdm>=4.67.1",
     "wandb>=0.19.7",
     "pandas>=2",
