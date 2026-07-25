@@ -2,6 +2,7 @@ import torch
 import torch.distributed as dist
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from typing import Literal, Type, Any
+from collections import defaultdict
 
 
 class DDPContainer(torch.nn.Module):
@@ -91,3 +92,49 @@ class ShardedOptimizer(torch.optim.Optimizer):
             self._opt = self._opt_cls([param_group_shard], **self._kwargs)
         else:
             self._opt.add_param_group(param_group_shard)
+
+
+class FSDP(torch.nn.Module):
+    def __init__(self, module: torch.nn.Module, compute_dtype: torch.dtype | None = None):
+        super().__init__()
+        self._module = module
+        self._dtype = compute_dtype
+
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+        self._rank = rank
+
+        self._params_meta = defaultdict(list)
+
+        for m in module.modules():
+            if not isinstance(m, (torch.nn.Linear, torch.nn.Embedding)):
+                continue
+
+            for name, p in m.named_parameters(recurse=False):
+                shape = p.shape
+                flat = p.detach().reshape(-1)
+                numel = flat.numel()
+                pad = (-numel) % world_size
+                if pad:
+                    flat = torch.cat([flat, flat.new_zeros(pad)])
+                shard_size = flat.numel() // world_size
+                shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
+                setattr(m, name, torch.nn.Parameter(shard))
+
+                self._params_meta[m].append((name, shape, pad))
+            m.register_forward_pre_hook(self._forward_pre_hook)
+
+    def _forward_pre_hook(self, module: torch.nn.Module, args):
+        i = 0
+        for name, p in module.named_parameters(recurse=False):
+            meta = self._params_meta[module][i]
+            assert meta[0] == name
+            shape = meta[1]
+
+            tensor_list = [torch.zeros_like(p) for _ in range(dist.get_world_size())]
+            dist.all_gather(tensor_list, p)
+            global_tensor = torch.cat(tensor_list, dim=0)
+            weight = global_tensor[: shape.numel()].reshape(shape)
+            setattr(module, name, weight)
+
+            i += 1
