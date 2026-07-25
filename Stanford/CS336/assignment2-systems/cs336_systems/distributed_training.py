@@ -103,7 +103,7 @@ class FSDP(torch.nn.Module):
     def __init__(self, module: torch.nn.Module, compute_dtype: torch.dtype | None = None):
         super().__init__()
         self.module = module
-        self._dtype = compute_dtype
+        self._dtype = compute_dtype or torch.float32
 
         rank = dist.get_rank()
         world_size = dist.get_world_size()
@@ -111,7 +111,7 @@ class FSDP(torch.nn.Module):
 
         self._params_shard = defaultdict(dict)
         self._full = defaultdict(dict)
-        self._params_meta = defaultdict(list)
+        self._params_meta = defaultdict(dict)
 
         for m in module.modules():
             if not should_shard_module(m):
@@ -119,19 +119,12 @@ class FSDP(torch.nn.Module):
 
             for name, p in m.named_parameters(recurse=False):
                 shape = p.shape
-                # flat = p.detach().reshape(-1)
-                # numel = flat.numel()
-                # pad = (-numel) % world_size
-                # if pad:
-                #     flat = torch.cat([flat, flat.new_zeros(pad)])
-                # shard_size = flat.numel() // world_size
-                # shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
                 shard, _ = self._shard_tensor(p, world_size)
                 shard = torch.nn.Parameter(shard)
                 setattr(m, name, shard)
 
                 self._params_shard[m][name] = shard
-                self._params_meta[m].append((name, shape))
+                self._params_meta[m][name] = (shape,)
 
             m.register_forward_pre_hook(self._forward_pre_hook)
             m.register_forward_hook(self._forward_post_hook)
@@ -169,13 +162,28 @@ class FSDP(torch.nn.Module):
                     dist.all_reduce(p.grad, op=dist.ReduceOp.AVG, async_op=False)
 
     def gather_full_params(self):
-        pass
+        res = {}
+        for prefix, m in self.module.named_modules():
+            is_sharded = should_shard_module(m)
+            for name, p in m.named_parameters(recurse=False):
+                p_name = f"{prefix}.{name}" if prefix else name
+                if is_sharded:
+                    tensor_list = [torch.zeros_like(p) for _ in range(dist.get_world_size())]
+                    dist.all_gather(tensor_list, p)
+                    global_tensor = torch.cat(tensor_list, dim=0)
+
+                    shape = self._params_meta[m][name][0]
+                    weight = global_tensor[: shape.numel()].reshape(shape)
+                    res[p_name] = weight
+                else:
+                    res[p_name] = p
+        return res
 
     def _forward_pre_hook(self, module: torch.nn.Module, args):
-        for meta in self._params_meta[module]:
-            name, shape = meta[0], meta[1]
+        for name, meta in self._params_meta[module].items():
+            shape = meta[0]
 
-            p = module.get_parameter(name)
+            p = module.get_parameter(name).to(self._dtype)
             tensor_list = [torch.zeros_like(p) for _ in range(dist.get_world_size())]
             dist.all_gather(tensor_list, p)
             global_tensor = torch.cat(tensor_list, dim=0)
@@ -188,7 +196,6 @@ class FSDP(torch.nn.Module):
             self._full[module][name] = weight
 
     def _forward_post_hook(self, module: torch.nn.Module, args, output):
-        for meta in self._params_meta[module]:
-            name = meta[0]
+        for name in self._params_meta[module].keys():
             delattr(module, name)
             setattr(module, name, self._params_shard[module][name])

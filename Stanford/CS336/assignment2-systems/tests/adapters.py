@@ -115,7 +115,7 @@ def fsdp_gather_full_params(fsdp_model: torch.nn.Module) -> dict[str, torch.Tens
     Returns:
         State dictionary mapping parameter names to full (unsharded) tensors.
     """
-    raise NotImplementedError
+    return fsdp_model.gather_full_params()
 
 
 def get_sharded_optimizer(params, optimizer_cls: type[torch.optim.Optimizer], **kwargs) -> torch.optim.Optimizer:
