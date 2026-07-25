@@ -5,6 +5,7 @@ from typing import Literal, Type, Any
 from collections import defaultdict
 from cs336_basics.model import Embedding, Linear
 
+
 class DDPContainer(torch.nn.Module):
     def __init__(self, module: torch.nn.Module, policy: Literal["naive", "packed", "async"] = "async"):
         super().__init__()
@@ -92,6 +93,7 @@ class ShardedOptimizer(torch.optim.Optimizer):
             self._opt = self._opt_cls([param_group_shard], **self._kwargs)
         else:
             self._opt.add_param_group(param_group_shard)
+
 
 def should_shard_module(m: torch.nn.Module) -> bool:
     return isinstance(m, (Linear, Embedding, torch.nn.Linear, torch.nn.Embedding))
