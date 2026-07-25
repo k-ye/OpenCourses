@@ -2,6 +2,8 @@ import torch
 import torch.distributed as dist
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from typing import Literal, Type, Any
+from collections import defaultdict
+from cs336_basics.model import Embedding, Linear
 
 
 class DDPContainer(torch.nn.Module):
@@ -91,3 +93,109 @@ class ShardedOptimizer(torch.optim.Optimizer):
             self._opt = self._opt_cls([param_group_shard], **self._kwargs)
         else:
             self._opt.add_param_group(param_group_shard)
+
+
+def should_shard_module(m: torch.nn.Module) -> bool:
+    return isinstance(m, (Linear, Embedding, torch.nn.Linear, torch.nn.Embedding))
+
+
+class FSDP(torch.nn.Module):
+    def __init__(self, module: torch.nn.Module, compute_dtype: torch.dtype | None = None):
+        super().__init__()
+        self.module = module
+        self._dtype = compute_dtype or torch.float32
+
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+        self._rank = rank
+
+        self._params_shard = defaultdict(dict)
+        self._full = defaultdict(dict)
+        self._params_meta = defaultdict(dict)
+
+        for m in module.modules():
+            if not should_shard_module(m):
+                continue
+
+            for name, p in m.named_parameters(recurse=False):
+                shape = p.shape
+                shard, _ = self._shard_tensor(p, world_size)
+                shard = torch.nn.Parameter(shard)
+                setattr(m, name, shard)
+
+                self._params_shard[m][name] = shard
+                self._params_meta[m][name] = (shape,)
+
+            m.register_forward_pre_hook(self._forward_pre_hook)
+            m.register_forward_hook(self._forward_post_hook)
+
+    def _shard_tensor(self, x: torch.Tensor, world_size: int):
+        flat = x.detach().reshape(-1)
+        numel = flat.numel()
+
+        pad = (-numel) % world_size
+        if pad:
+            flat = torch.cat([flat, flat.new_zeros(pad)])
+        shard_size = flat.numel() // world_size
+        rank = self._rank
+        shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
+        return shard, flat
+
+    def forward(self, *inputs, **kwargs):
+        return self.module(*inputs, **kwargs)
+
+    def finish_gradient_synchronization(self):
+        world_size = dist.get_world_size()
+        for m in self.module.modules():
+            if should_shard_module(m):
+                for name, p in self._full[m].items():
+                    if p.grad is None:
+                        continue
+
+                    grad_shard, grad_flat = self._shard_tensor(p.grad.to(torch.float32), world_size)
+                    dist.reduce_scatter_tensor(grad_shard, grad_flat, op=dist.ReduceOp.AVG, async_op=False)
+                    self._params_shard[m][name].grad = grad_shard
+            else:
+                for p in m.parameters(recurse=False):
+                    if p.grad is None:
+                        continue
+                    dist.all_reduce(p.grad, op=dist.ReduceOp.AVG, async_op=False)
+
+    def gather_full_params(self):
+        res = {}
+        for prefix, m in self.module.named_modules():
+            is_sharded = should_shard_module(m)
+            for name, p in m.named_parameters(recurse=False):
+                p_name = f"{prefix}.{name}" if prefix else name
+                if is_sharded:
+                    tensor_list = [torch.zeros_like(p) for _ in range(dist.get_world_size())]
+                    dist.all_gather(tensor_list, p)
+                    global_tensor = torch.cat(tensor_list, dim=0)
+
+                    shape = self._params_meta[m][name][0]
+                    weight = global_tensor[: shape.numel()].reshape(shape)
+                    res[p_name] = weight
+                else:
+                    res[p_name] = p
+        return res
+
+    def _forward_pre_hook(self, module: torch.nn.Module, args):
+        for name, meta in self._params_meta[module].items():
+            shape = meta[0]
+
+            p = module.get_parameter(name).to(self._dtype)
+            tensor_list = [torch.zeros_like(p) for _ in range(dist.get_world_size())]
+            dist.all_gather(tensor_list, p)
+            global_tensor = torch.cat(tensor_list, dim=0)
+            weight = global_tensor[: shape.numel()].reshape(shape)
+            weight.requires_grad_(True)
+
+            del module._parameters[name]
+            setattr(module, name, weight)
+
+            self._full[module][name] = weight
+
+    def _forward_post_hook(self, module: torch.nn.Module, args, output):
+        for name in self._params_meta[module].keys():
+            delattr(module, name)
+            setattr(module, name, self._params_shard[module][name])
