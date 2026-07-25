@@ -3,7 +3,7 @@ import torch.distributed as dist
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from typing import Literal, Type, Any
 from collections import defaultdict
-
+from cs336_basics.model import Embedding, Linear
 
 class DDPContainer(torch.nn.Module):
     def __init__(self, module: torch.nn.Module, policy: Literal["naive", "packed", "async"] = "async"):
@@ -97,7 +97,7 @@ class ShardedOptimizer(torch.optim.Optimizer):
 class FSDP(torch.nn.Module):
     def __init__(self, module: torch.nn.Module, compute_dtype: torch.dtype | None = None):
         super().__init__()
-        self._module = module
+        self.module = module
         self._dtype = compute_dtype
 
         rank = dist.get_rank()
@@ -108,7 +108,7 @@ class FSDP(torch.nn.Module):
         self._params_meta = defaultdict(list)
 
         for m in module.modules():
-            if not isinstance(m, (torch.nn.Linear, torch.nn.Embedding)):
+            if not isinstance(m, (Linear, Embedding, torch.nn.Linear, torch.nn.Embedding)):
                 continue
 
             for name, p in m.named_parameters(recurse=False):
@@ -129,7 +129,10 @@ class FSDP(torch.nn.Module):
             m.register_forward_hook(self._forward_post_hook)
 
     def forward(self, *inputs, **kwargs):
-        return self._module(*input, **kwargs)
+        return self.module(*inputs, **kwargs)
+
+    def finish_gradient_synchronization(self):
+        pass
 
     def _forward_pre_hook(self, module: torch.nn.Module, args):
         for meta in self._params_meta[module]:
