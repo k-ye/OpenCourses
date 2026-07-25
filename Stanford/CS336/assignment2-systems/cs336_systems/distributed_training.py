@@ -93,6 +93,9 @@ class ShardedOptimizer(torch.optim.Optimizer):
         else:
             self._opt.add_param_group(param_group_shard)
 
+def should_shard_module(m: torch.nn.Module) -> bool:
+    return isinstance(m, (Linear, Embedding, torch.nn.Linear, torch.nn.Embedding))
+
 
 class FSDP(torch.nn.Module):
     def __init__(self, module: torch.nn.Module, compute_dtype: torch.dtype | None = None):
@@ -105,33 +108,66 @@ class FSDP(torch.nn.Module):
         self._rank = rank
 
         self._params_shard = defaultdict(dict)
+        self._full = defaultdict(dict)
         self._params_meta = defaultdict(list)
 
         for m in module.modules():
-            if not isinstance(m, (Linear, Embedding, torch.nn.Linear, torch.nn.Embedding)):
+            if not should_shard_module(m):
                 continue
 
             for name, p in m.named_parameters(recurse=False):
                 shape = p.shape
-                flat = p.detach().reshape(-1)
-                numel = flat.numel()
-                pad = (-numel) % world_size
-                if pad:
-                    flat = torch.cat([flat, flat.new_zeros(pad)])
-                shard_size = flat.numel() // world_size
-                shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
+                # flat = p.detach().reshape(-1)
+                # numel = flat.numel()
+                # pad = (-numel) % world_size
+                # if pad:
+                #     flat = torch.cat([flat, flat.new_zeros(pad)])
+                # shard_size = flat.numel() // world_size
+                # shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
+                shard = self._shard_tensor(p, world_size)
                 shard = torch.nn.Parameter(shard)
                 setattr(m, name, shard)
 
                 self._params_shard[m][name] = shard
-                self._params_meta[m].append((name, shape, pad))
+                self._params_meta[m].append((name, shape))
+
             m.register_forward_pre_hook(self._forward_pre_hook)
             m.register_forward_hook(self._forward_post_hook)
+
+    def _shard_tensor(self, x: torch.Tensor, world_size: int):
+        flat = x.detach().reshape(-1)
+        numel = flat.numel()
+
+        pad = (-numel) % world_size
+        if pad:
+            flat = torch.cat([flat, flat.new_zeros(pad)])
+        shard_size = flat.numel() // world_size
+        rank = self._rank
+        shard = flat[rank * shard_size : (rank + 1) * shard_size].clone()
+        return shard
 
     def forward(self, *inputs, **kwargs):
         return self.module(*inputs, **kwargs)
 
     def finish_gradient_synchronization(self):
+        world_size = dist.get_world_size()
+        for m in self.module.modules():
+            if should_shard_module(m):
+                for name, p in m.named_parameters(recurse=False):
+                    if p.grad is None:
+                        continue
+
+                    shape = p.grad.shape
+                    grad_shard = self._shard_tensor(p.grad, world_size)
+                    dist.reduce_scatter(grad_shard, [p.grad], op=dist.ReduceOp.AVG, async_op=False)
+                    self._params_shard[m][name].grad = grad_shard
+            else:
+                for p in m.parameters(recurse=False):
+                    if p.grad is None:
+                        continue
+                    dist.all_reduce(p.grad, op=dist.ReduceOp.AVG, async_op=False)
+
+    def gather_full_params(self):
         pass
 
     def _forward_pre_hook(self, module: torch.nn.Module, args):
@@ -143,9 +179,12 @@ class FSDP(torch.nn.Module):
             dist.all_gather(tensor_list, p)
             global_tensor = torch.cat(tensor_list, dim=0)
             weight = global_tensor[: shape.numel()].reshape(shape)
+            weight.requires_grad_(True)
 
             del module._parameters[name]
             setattr(module, name, weight)
+
+            self._full[module][name] = weight
 
     def _forward_post_hook(self, module: torch.nn.Module, args, output):
         for meta in self._params_meta[module]:
